@@ -36,28 +36,37 @@ CREATE TABLE IF NOT EXISTS prepedidos_items (
 
 -- Create ofertas table (read-only, managed by central system)
 CREATE TABLE IF NOT EXISTS ofertas (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INT(11) NOT NULL AUTO_INCREMENT,
     titulo VARCHAR(255) NOT NULL,
-    descripcion TEXT,
+    descripcion TEXT DEFAULT NULL,
     fecha_inicio DATE NOT NULL,
     fecha_fin DATE NOT NULL,
-    descuento_porcentaje DECIMAL(5,2) CHECK (descuento_porcentaje >= 0 AND descuento_porcentaje <= 100),
-    descuento_monto DECIMAL(10,2) CHECK (descuento_monto >= 0),
-    productos_aplicables JSON, -- Array of product IDs or 'all'
-    activa BOOLEAN DEFAULT TRUE,
-    imagen_url VARCHAR(500),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_fechas_activa (fecha_inicio, fecha_fin, activa),
-    INDEX idx_activa_descuento (activa, descuento_porcentaje)
-);
+    descuento_porcentaje DECIMAL(5,2) DEFAULT NULL CHECK (descuento_porcentaje >= 0 AND descuento_porcentaje <= 100),
+    descuento_monto DECIMAL(10,2) DEFAULT NULL CHECK (descuento_monto >= 0),
+    activa TINYINT(1) DEFAULT 1,
+    imagen_url VARCHAR(500) DEFAULT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    id_producto INT(11) DEFAULT NULL,
+    PRIMARY KEY (id),
+    KEY idx_fechas_activa (fecha_inicio, fecha_fin, activa),
+    KEY idx_activa_descuento (activa, descuento_porcentaje)
+) ENGINE=InnoDB AUTO_INCREMENT=11 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- Insert sample data for testing
 
--- Sample offers (for testing)
-INSERT INTO ofertas (titulo, descripcion, fecha_inicio, fecha_fin, descuento_porcentaje, productos_aplicables, activa, imagen_url) VALUES
-('Descuento 15% en Bebidas', 'Descuento especial en todas las bebidas del mes', CURDATE(), DATE_ADD(CURDATE(), INTERVAL 30 DAY), 15.00, '["all"]', TRUE, 'https://example.com/offer1.jpg'),
-('Promoción Cervezas', 'Descuento en cervezas seleccionadas', CURDATE(), DATE_ADD(CURDATE(), INTERVAL 30 DAY), 20.00, '[1, 2, 3]', TRUE, 'https://example.com/offer2.jpg'),
-('Oferta Especial Vinos', 'Descuento en vinos premium', CURDATE(), DATE_ADD(CURDATE(), INTERVAL 30 DAY), 25.00, '[4, 5, 6]', TRUE, 'https://example.com/offer3.jpg');
+-- Sample offers (for testing) - Based on real data from ofertas.csv
+-- Using current month dates to ensure offers are visible
+INSERT INTO ofertas (titulo, descripcion, fecha_inicio, fecha_fin, descuento_porcentaje, activa, imagen_url, id_producto) VALUES
+('Oferta especial del mes', '¡Descuento del 15% durante este mes!', DATE_FORMAT(CURDATE(), '%Y-%m-01'), LAST_DAY(CURDATE()), 15.00, 1, NULL, 367),
+('Oferta especial del mes', '¡Descuento del 10% durante este mes!', DATE_FORMAT(CURDATE(), '%Y-%m-01'), LAST_DAY(CURDATE()), 10.00, 1, NULL, 281),
+('Oferta especial del mes', '¡Descuento del 15% durante este mes!', DATE_FORMAT(CURDATE(), '%Y-%m-01'), LAST_DAY(CURDATE()), 15.00, 1, NULL, 348),
+('Oferta especial del mes', '¡Descuento del 20% durante este mes!', DATE_FORMAT(CURDATE(), '%Y-%m-01'), LAST_DAY(CURDATE()), 20.00, 1, NULL, 262),
+('Oferta especial del mes', '¡Descuento del 10% durante este mes!', DATE_FORMAT(CURDATE(), '%Y-%m-01'), LAST_DAY(CURDATE()), 10.00, 1, NULL, 243),
+('Oferta especial del mes', '¡Descuento del 15% durante este mes!', DATE_FORMAT(CURDATE(), '%Y-%m-01'), LAST_DAY(CURDATE()), 15.00, 1, NULL, 268),
+('Oferta especial del mes', '¡Descuento del 15% durante este mes!', DATE_FORMAT(CURDATE(), '%Y-%m-01'), LAST_DAY(CURDATE()), 15.00, 1, NULL, 143),
+('Oferta especial del mes', '¡Descuento del 20% durante este mes!', DATE_FORMAT(CURDATE(), '%Y-%m-01'), LAST_DAY(CURDATE()), 20.00, 1, NULL, 223),
+('Oferta especial del mes', '¡Descuento del 15% durante este mes!', DATE_FORMAT(CURDATE(), '%Y-%m-01'), LAST_DAY(CURDATE()), 15.00, 1, NULL, 71),
+('Oferta especial del mes', '¡Descuento del 10% durante este mes!', DATE_FORMAT(CURDATE(), '%Y-%m-01'), LAST_DAY(CURDATE()), 10.00, 1, NULL, 344);
 
 -- Sample pre-orders (for testing)
 -- Note: These assume cliente_id 1 exists
@@ -71,3 +80,7 @@ INSERT INTO prepedidos_items (prepedido_id, producto_id, cantidad, precio_unitar
 (1, 1, 5, 25.50),
 (1, 2, 3, 18.75),
 (2, 1, 2, 25.50);
+
+-- Update some products with sample images (small base64 encoded images for testing)
+-- This is a simple 1x1 pixel red image in base64
+UPDATE productos SET foto = FROM_BASE64('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/2wBDAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwA/wA==') WHERE id IN (1, 2, 3, 4, 5) AND EXISTS (SELECT 1 FROM productos WHERE id IN (1, 2, 3, 4, 5));

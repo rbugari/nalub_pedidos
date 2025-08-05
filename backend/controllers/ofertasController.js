@@ -10,7 +10,7 @@ const getOfertas = async (req, res) => {
     const query = `
       SELECT 
         id, titulo, descripcion, fecha_inicio, fecha_fin,
-        descuento_porcentaje, descuento_monto, productos_aplicables,
+        descuento_porcentaje, descuento_monto, id_producto,
         imagen_url, activa, created_at
       FROM ofertas 
       ORDER BY created_at DESC
@@ -24,11 +24,10 @@ const getOfertas = async (req, res) => {
       executeQuery(countQuery)
     ]);
     
-    // Parsear productos_aplicables de JSON string a array
+    // Formatear ofertas con el nuevo campo id_producto
     const ofertasFormateadas = ofertas.map(oferta => ({
       ...oferta,
-      productos_aplicables: oferta.productos_aplicables ? 
-        JSON.parse(oferta.productos_aplicables) : []
+      id_producto: oferta.id_producto || null
     }));
     
     res.json({
@@ -54,7 +53,7 @@ const getOfertasVigentesMes = async (req, res) => {
     const query = `
       SELECT 
         id, titulo, descripcion, fecha_inicio, fecha_fin,
-        descuento_porcentaje, descuento_monto, productos_aplicables,
+        descuento_porcentaje, descuento_monto, id_producto,
         imagen_url, created_at
       FROM ofertas 
       WHERE activa = 1 
@@ -67,11 +66,10 @@ const getOfertasVigentesMes = async (req, res) => {
     
     const ofertas = await executeQuery(query);
     
-    // Parsear productos_aplicables de JSON string a array
+    // Formatear ofertas con el nuevo campo id_producto
     const ofertasFormateadas = ofertas.map(oferta => ({
       ...oferta,
-      productos_aplicables: oferta.productos_aplicables ? 
-        JSON.parse(oferta.productos_aplicables) : []
+      id_producto: oferta.id_producto || null
     }));
     
     res.json({
@@ -97,7 +95,7 @@ const getOferta = async (req, res) => {
     const query = `
       SELECT 
         id, titulo, descripcion, fecha_inicio, fecha_fin,
-        descuento_porcentaje, descuento_monto, productos_aplicables,
+        descuento_porcentaje, descuento_monto, id_producto,
         imagen_url, created_at
       FROM ofertas 
       WHERE id = ? AND activa = 1
@@ -114,9 +112,8 @@ const getOferta = async (req, res) => {
     
     const oferta = ofertas[0];
     
-    // Parsear productos_aplicables
-    oferta.productos_aplicables = oferta.productos_aplicables ? 
-      JSON.parse(oferta.productos_aplicables) : [];
+    // Formatear oferta con el nuevo campo id_producto
+    oferta.id_producto = oferta.id_producto || null;
     
     res.json({
       success: true,
@@ -140,34 +137,22 @@ const getOfertasPorProducto = async (req, res) => {
     const query = `
       SELECT 
         id, titulo, descripcion, fecha_inicio, fecha_fin,
-        descuento_porcentaje, descuento_monto, productos_aplicables,
+        descuento_porcentaje, descuento_monto, id_producto,
         imagen_url, created_at
       FROM ofertas 
       WHERE activa = 1 
         AND fecha_inicio <= CURDATE() 
         AND fecha_fin >= CURDATE()
-        AND (productos_aplicables LIKE '%"all"%' OR productos_aplicables LIKE ?)
+        AND (id_producto IS NULL OR id_producto = ?)
       ORDER BY created_at DESC
     `;
     
-    const ofertas = await executeQuery(query, [`%"${producto_id}"%`]);
-    
-    // Filtrar ofertas que realmente aplican al producto
-    const ofertasAplicables = ofertas.filter(oferta => {
-      if (!oferta.productos_aplicables) return false;
-      
-      try {
-        const productos = JSON.parse(oferta.productos_aplicables);
-        return productos.includes('all') || productos.includes(producto_id.toString());
-      } catch (e) {
-        return false;
-      }
-    });
+    const ofertas = await executeQuery(query, [producto_id]);
     
     // Formatear ofertas
-    const ofertasFormateadas = ofertasAplicables.map(oferta => ({
+    const ofertasFormateadas = ofertas.map(oferta => ({
       ...oferta,
-      productos_aplicables: JSON.parse(oferta.productos_aplicables)
+      id_producto: oferta.id_producto || null
     }));
     
     res.json({

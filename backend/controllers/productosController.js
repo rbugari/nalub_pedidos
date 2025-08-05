@@ -11,7 +11,11 @@ const getProductos = async (req, res) => {
         p.id, p.codigo, p.nombre, p.precioVenta as precio,
         m.nombre as marca,
         e.nombre as envase, e.litros,
-        te.nombre as tipo_envase
+        te.nombre as tipo_envase,
+        CASE 
+          WHEN p.foto IS NOT NULL THEN CONCAT('data:image/jpeg;base64,', TO_BASE64(p.foto))
+          ELSE NULL 
+        END as foto
       FROM productos p
       LEFT JOIN marcas m ON p.marca = m.id
       LEFT JOIN envases e ON p.envase = e.id

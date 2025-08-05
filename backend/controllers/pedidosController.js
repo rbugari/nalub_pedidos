@@ -1,73 +1,65 @@
 const { executeQuery } = require('../config/database');
 
-// Get historical orders for authenticated user
+// Get historical orders for authenticated user (last 365 days)
 const getPedidos = async (req, res) => {
     try {
         const userId = req.user.id;
-        const { page = 1, limit = 10, estado, fecha_desde, fecha_hasta } = req.query;
+        console.log('🔍 PEDIDOS ENDPOINT CALLED FOR USER:', userId);
+        console.log('🔍 Request URL:', req.originalUrl);
+        console.log('🔍 Request method:', req.method);
         
-        const offset = (page - 1) * limit;
-        
-        // Build WHERE clause
-        let whereClause = 'WHERE p.cliente = ?';
-        const queryParams = [userId];
-        
-        if (estado) {
-            whereClause += ' AND p.estado = ?';
-            queryParams.push(estado);
-        }
-        
-        if (fecha_desde) {
-            whereClause += ' AND p.fecha >= ?';
-            queryParams.push(fecha_desde);
-        }
-        
-        if (fecha_hasta) {
-            whereClause += ' AND p.fecha <= ?';
-            queryParams.push(fecha_hasta);
-        }
-        
-        // Get total count
-        const countQuery = `
-            SELECT COUNT(*) as total
-            FROM pedidos p
-            ${whereClause}
-        `;
-        const [{ total }] = await executeQuery(countQuery, queryParams);
-        
-        // Get orders with pagination
+        // Get orders from last 365 days only - includes both primary and secondary accounts
         const pedidosQuery = `
-            SELECT p.id, p.fecha, p.estado, p.importeTotal, p.observacion,
-                   COUNT(pi.id) as total_items,
-                   SUM(pi.cantidad) as total_cantidad
-            FROM pedidos p
-            LEFT JOIN pedidoitems pi ON p.id = pi.pedidoId
-            ${whereClause}
-            GROUP BY p.id, p.fecha, p.estado, p.importeTotal, p.observacion
-            ORDER BY p.fecha DESC
-            LIMIT ? OFFSET ?
+            SELECT 
+                p.id, 
+                p.fechaEntrega, 
+                p.estado, 
+                p.importeTotal, 
+                COALESCE(SUM(pi.cantidad), 0) as cantidadBultos, 
+                CASE 
+                    WHEN p.cliente = c.id THEN 'principal' 
+                    WHEN p.cliente = c.idsecundario THEN 'secundario' 
+                    ELSE 'desconocido' 
+                END AS tipo_cliente, 
+                CASE 
+                    WHEN p.cliente = c.id THEN TRUE 
+                    ELSE FALSE 
+                END AS es_principal 
+            FROM 
+                clientes c 
+                JOIN pedidos p ON (p.cliente = c.id OR p.cliente = c.idsecundario) 
+                LEFT JOIN pedidoitems pi ON p.id = pi.pedidoId 
+            WHERE 
+                c.id = ? 
+                AND p.fechaEntrega >= DATE_SUB(CURDATE(), INTERVAL 365 DAY) 
+            GROUP BY 
+                p.id, p.fechaEntrega, p.estado, p.importeTotal, tipo_cliente, es_principal 
+            ORDER BY 
+                p.fechaEntrega DESC
         `;
         
-        queryParams.push(parseInt(limit), offset);
-        const pedidos = await executeQuery(pedidosQuery, queryParams);
+        console.log('🔍 Executing query for user:', userId);
+        const pedidos = await executeQuery(pedidosQuery, [userId]);
+        console.log('🔍 Query result:', pedidos.length, 'pedidos found');
+        console.log('🔍 First few results:', pedidos.slice(0, 3));
         
         // Format response
         const formattedPedidos = pedidos.map(pedido => ({
-            ...pedido,
-            total: parseFloat(pedido.importeTotal) || 0,
-            total_items: parseInt(pedido.total_items) || 0,
-            total_cantidad: parseInt(pedido.total_cantidad) || 0
+            id: pedido.id,
+            fechaEntrega: pedido.fechaEntrega,
+            estado: pedido.estado,
+            importeTotal: parseFloat(pedido.importeTotal) || 0,
+            cantidadBultos: parseInt(pedido.cantidadBultos) || 0,
+            tipo_cliente: pedido.tipo_cliente,
+            es_principal: pedido.es_principal
         }));
         
-        res.json({
-            data: formattedPedidos,
-            pagination: {
-                current_page: parseInt(page),
-                total_pages: Math.ceil(total / limit),
-                total_items: parseInt(total),
-                items_per_page: parseInt(limit)
-            }
-        });
+        const response = {
+            success: true,
+            data: formattedPedidos
+        };
+        console.log('🔍 PEDIDOS RESPONSE:', JSON.stringify(response, null, 2));
+        res.json(response);
         
     } catch (error) {
         console.error('Error getting orders:', error);
