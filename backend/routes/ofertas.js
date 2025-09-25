@@ -12,8 +12,8 @@ const {
 // GET /api/ofertas (base route for all offers)
 router.get('/', authenticateToken, getOfertas);
 
-// GET /api/ofertas/vigentes-mes
-router.get('/vigentes-mes', authenticateToken, getOfertasVigentesMes);
+// GET /api/ofertas/vigentes-mes (público para selector de ofertas)
+router.get('/vigentes-mes', getOfertasVigentesMes);
 
 // GET /api/ofertas/destacadas
 router.get('/destacadas', authenticateToken, getOfertasDestacadas);

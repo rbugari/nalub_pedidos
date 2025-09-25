@@ -52,25 +52,63 @@ const getOfertasVigentesMes = async (req, res) => {
   try {
     const query = `
       SELECT 
-        id, titulo, descripcion, fecha_inicio, fecha_fin,
-        descuento_porcentaje, descuento_monto, id_producto,
-        imagen_url, created_at
-      FROM ofertas 
-      WHERE activa = 1 
-        AND fecha_inicio <= CURDATE() 
-        AND fecha_fin >= CURDATE()
-        AND MONTH(fecha_inicio) = MONTH(CURDATE())
-        AND YEAR(fecha_inicio) = YEAR(CURDATE())
-      ORDER BY created_at DESC
+        o.id, o.titulo, o.descripcion, o.fecha_inicio, o.fecha_fin,
+        o.descuento_porcentaje, o.descuento_monto, o.imagen_url, o.id_producto,
+        o.created_at,
+        p.id as producto_id,
+        p.codigo as producto_codigo,
+        p.nombre as producto_nombre,
+        p.precioVenta as producto_precio,
+        m.nombre as producto_marca,
+        e.nombre as producto_envase,
+        e.litros as producto_litros,
+        CASE 
+          WHEN p.foto IS NOT NULL THEN CONCAT('data:image/jpeg;base64,', TO_BASE64(p.foto))
+          ELSE NULL 
+        END as producto_foto
+      FROM ofertas o
+      LEFT JOIN productos p ON o.id_producto = p.id
+      LEFT JOIN marcas m ON p.marca = m.id
+      LEFT JOIN envases e ON p.envase = e.id
+      WHERE o.activa = 1 
+        AND o.fecha_inicio <= CURDATE() 
+        AND o.fecha_fin >= CURDATE()
+        AND MONTH(o.fecha_inicio) = MONTH(CURDATE())
+        AND YEAR(o.fecha_inicio) = YEAR(CURDATE())
+      ORDER BY o.created_at DESC
     `;
     
     const ofertas = await executeQuery(query);
     
-    // Formatear ofertas con el nuevo campo id_producto
-    const ofertasFormateadas = ofertas.map(oferta => ({
-      ...oferta,
-      id_producto: oferta.id_producto || null
-    }));
+    // Formatear ofertas con todos los campos del producto
+    const ofertasFormateadas = ofertas.map(oferta => {
+      // Calcular precio con descuento
+      let precioOferta = oferta.producto_precio || 0;
+      if (oferta.descuento_porcentaje) {
+        precioOferta = precioOferta * (1 - oferta.descuento_porcentaje / 100);
+      } else if (oferta.descuento_monto) {
+        precioOferta = Math.max(0, precioOferta - oferta.descuento_monto);
+      }
+      
+      return {
+        ...oferta,
+        id_producto: oferta.id_producto || null,
+        producto_id: oferta.producto_id || null,
+        producto_codigo: oferta.producto_codigo || '',
+        producto_nombre: oferta.producto_nombre || '',
+        producto_precio: oferta.producto_precio || 0,
+        producto_precio_oferta: Math.round(precioOferta * 100) / 100,
+        producto_marca: oferta.producto_marca || '',
+        producto_envase: oferta.producto_envase || '',
+        producto_litros: oferta.producto_litros || 0,
+        producto_foto: oferta.producto_foto || null
+      };
+    });
+    
+    console.log('Ofertas vigentes encontradas:', ofertasFormateadas.length);
+    if (ofertasFormateadas.length > 0) {
+      console.log('Primera oferta:', JSON.stringify(ofertasFormateadas[0], null, 2));
+    }
     
     res.json({
       success: true,
@@ -175,20 +213,22 @@ const getOfertasDestacadas = async (req, res) => {
   try {
     const query = `
       SELECT 
-        id, titulo, descripcion, fecha_inicio, fecha_fin,
-        descuento_porcentaje, descuento_monto, imagen_url
-      FROM ofertas 
-      WHERE activa = 1 
-        AND fecha_inicio <= CURDATE() 
-        AND fecha_fin >= CURDATE()
-        AND MONTH(fecha_inicio) = MONTH(CURDATE())
-        AND YEAR(fecha_inicio) = YEAR(CURDATE())
+        o.id, o.titulo, o.descripcion, o.fecha_inicio, o.fecha_fin,
+        o.descuento_porcentaje, o.descuento_monto, o.imagen_url, o.id_producto,
+        p.nombre as producto_nombre, p.precio as producto_precio, p.foto as producto_foto
+      FROM ofertas o
+      LEFT JOIN productos p ON o.id_producto = p.id
+      WHERE o.activa = 1 
+        AND o.fecha_inicio <= CURDATE() 
+        AND o.fecha_fin >= CURDATE()
+        AND MONTH(o.fecha_inicio) = MONTH(CURDATE())
+        AND YEAR(o.fecha_inicio) = YEAR(CURDATE())
       ORDER BY 
         CASE 
-          WHEN descuento_porcentaje IS NOT NULL THEN descuento_porcentaje 
+          WHEN o.descuento_porcentaje IS NOT NULL THEN o.descuento_porcentaje 
           ELSE 0 
         END DESC,
-        created_at DESC
+        o.created_at DESC
       LIMIT 3
     `;
     

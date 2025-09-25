@@ -30,6 +30,18 @@ const router = createRouter({
       meta: { requiresAuth: true }
     },
     {
+      path: '/prepedidos/nuevo',
+      name: 'prepedido-nuevo',
+      component: () => import('../views/prepedidos/PrepedidoForm.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/prepedidos/editar/:id',
+      name: 'prepedido-editar',
+      component: () => import('../views/prepedidos/PrepedidoForm.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
       path: '/pedidos',
       name: 'pedidos',
       component: () => import('../views/pedidos/PedidosList.vue'),
@@ -51,6 +63,12 @@ const router = createRouter({
       path: '/ofertas',
       name: 'ofertas',
       component: () => import('../views/ofertas/Ofertas.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/pagos',
+      name: 'pagos',
+      component: () => import('../views/pagos/PagosList.vue'),
       meta: { requiresAuth: true }
     },
     {

@@ -7,8 +7,6 @@ const login = async (req, res) => {
   try {
     const { usuario, password } = req.body;
     
-    console.log('🔍 Login attempt:', { usuario, password }); // Log de debugging
-    
     if (!usuario || !password) {
       return res.status(400).json({
         success: false,
@@ -16,67 +14,31 @@ const login = async (req, res) => {
       });
     }
     
-    // Buscar usuario en tabla clientes por campo 'usuario' - Fixed query
-    const query = `
-      SELECT id, nombre, email, usuario, pwd, deuda, fechaUltimoPago
-      FROM clientes 
-      WHERE usuario = ?
-    `;
-    
-    console.log('🔍 Executing query:', query, 'with params:', [usuario]); // Log de debugging
-    
+    const query = 'SELECT * FROM clientes WHERE usuario = ?';
     const users = await executeQuery(query, [usuario]);
     
-    console.log('🔍 Query results:', users); // Log de debugging
-    console.log('🔍 Number of users found:', users.length); // Log de debugging
-    
     if (users.length === 0) {
-      console.log('❌ No user found with usuario:', usuario); // Log de debugging
       return res.status(401).json({
         success: false,
         message: 'Credenciales inválidas - Usuario no encontrado'
       });
     }
-    
+
     const user = users[0];
     
-    console.log('🔍 User found:', {
-      id: user.id,
-      usuario: user.usuario,
-      pwd: user.pwd,
-      pwd_length: user.pwd ? user.pwd.length : 'null'
-    }); // Log de debugging
-    
-    // Verificar contraseña directa (sin bcrypt si pwd está en texto plano)
-    const isValidPassword = password === user.pwd;
-    
-    console.log('🔍 Password validation:', {
-      provided: password,
-      provided_length: password.length,
-      stored: user.pwd,
-      stored_length: user.pwd ? user.pwd.length : 'null',
-      match: isValidPassword
-    }); // Log de debugging
-    
-    if (!isValidPassword) {
-      console.log('❌ Invalid password for user:', usuario); // Log de debugging
+    // Comparación directa de contraseñas (sin bcrypt)
+    if (password !== user.pwd) {
       return res.status(401).json({
         success: false,
         message: 'Credenciales inválidas - Contraseña incorrecta'
       });
     }
-    
-    console.log('✅ Login successful for user:', usuario); // Log de debugging
-    
+
     // Generar JWT
     const token = jwt.sign(
-      { 
-        userId: user.id,
-        usuario: user.usuario,
-        nombre: user.nombre
-      },
+      { userId: user.id },
       process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN }
+      { expiresIn: '24h' }
     );
     
     console.log('🔍 Generated JWT token:', token); // Nuevo log

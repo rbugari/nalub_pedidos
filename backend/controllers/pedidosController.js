@@ -135,7 +135,51 @@ const getPedido = async (req, res) => {
     }
 };
 
+// Update order status
+const updatePedido = async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { id } = req.params;
+        const { estado } = req.body;
+        
+        // Validate status
+        const validStatuses = ['pendiente', 'en_proceso', 'completado', 'cancelado'];
+        if (!validStatuses.includes(estado)) {
+            return res.status(400).json({ error: 'Estado inválido' });
+        }
+        
+        // Check if order exists and belongs to user
+        const checkQuery = `
+            SELECT id FROM pedidos 
+            WHERE id = ? AND cliente = ?
+        `;
+        const [existingPedido] = await executeQuery(checkQuery, [id, userId]);
+        
+        if (!existingPedido) {
+            return res.status(404).json({ error: 'Pedido no encontrado' });
+        }
+        
+        // Update order status
+        const updateQuery = `
+            UPDATE pedidos 
+            SET estado = ? 
+            WHERE id = ? AND cliente = ?
+        `;
+        await executeQuery(updateQuery, [estado, id, userId]);
+        
+        res.json({ 
+            success: true, 
+            message: 'Estado del pedido actualizado correctamente' 
+        });
+        
+    } catch (error) {
+        console.error('Error updating order status:', error);
+        res.status(500).json({ error: 'Error interno del servidor' });
+    }
+};
+
 module.exports = {
     getPedidos,
-    getPedido
+    getPedido,
+    updatePedido
 };

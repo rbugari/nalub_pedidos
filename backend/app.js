@@ -40,6 +40,7 @@ app.use('/api/ofertas', require('./routes/ofertas'));
 app.use('/api/productos', require('./routes/productos'));
 app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api/pedidos', require('./routes/pedidos'));
+app.use('/api/pagos', require('./routes/pagos'));
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

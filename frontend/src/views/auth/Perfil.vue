@@ -152,7 +152,7 @@ async function changePassword() {
                 label="Deuda actual"
                 prepend-icon="mdi-currency-usd"
                 readonly
-                suffix="€"
+                suffix="$"
               ></v-text-field>
               
               <!-- Debug info -->

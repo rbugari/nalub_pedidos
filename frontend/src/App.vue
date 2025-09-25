@@ -8,12 +8,16 @@ const authStore = useAuthStore()
 const route = useRoute()
 
 onMounted(() => {
-  authStore.checkAuth()
+  console.log('🔍 App.vue mounted - checking auth')
+  const isAuth = authStore.checkAuth()
+  console.log('🔍 Auth check result:', isAuth)
+  console.log('🔍 Current route:', route.path)
+  console.log('🔍 Route meta:', route.meta)
 })
 </script>
 
 <template>
-  <DefaultLayout v-if="authStore.isAuthenticated && route.meta.requiresAuth">
+  <DefaultLayout v-if="authStore.isAuthenticated">
     <router-view />
   </DefaultLayout>
   <router-view v-else />

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useRouter } from 'vue-router'
 import { useDisplay } from 'vuetify'
@@ -9,6 +9,11 @@ const router = useRouter()
 const { mobile } = useDisplay()
 const drawer = ref(false)
 const user = computed(() => authStore.getUser)
+
+onMounted(() => {
+  console.log('🔍 DefaultLayout mounted')
+  console.log('🔍 Current route in layout:', router.currentRoute.value.path)
+})
 
 function logout() {
   authStore.logout()
@@ -39,6 +44,9 @@ function logout() {
         <v-list-item to="/ofertas" @click="drawer = false">
           <v-list-item-title>Ofertas</v-list-item-title>
         </v-list-item>
+        <v-list-item to="/pagos" @click="drawer = false">
+          <v-list-item-title>Pagos</v-list-item-title>
+        </v-list-item>
         <v-list-item to="/perfil" @click="drawer = false">
           <v-list-item-title>Perfil</v-list-item-title>
         </v-list-item>
@@ -66,6 +74,7 @@ function logout() {
         <v-btn to="/pedidos" text>Pedidos</v-btn>
         <v-btn to="/productos" text>Productos</v-btn>
         <v-btn to="/ofertas" text>Ofertas</v-btn>
+        <v-btn to="/pagos" text>Pagos</v-btn>
         <v-btn to="/perfil" text>Perfil</v-btn>
         <v-btn @click="logout" text>Cerrar Sesión</v-btn>
       </template>

@@ -1,19 +1,23 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import api from '../../services/api'
+import { formatCurrency } from '../../utils/currency'
 
 const productos = ref([])
 const loading = ref(true)
 const error = ref(null)
 const search = ref('')
+const imageDialog = ref(false)
+const selectedImage = ref(null)
+const selectedProductName = ref('')
 
 const headers = [
-  { title: 'ID', key: 'id', sortable: true },
+  { title: 'Imagen', key: 'foto', sortable: false, width: '80px' },
   { title: 'Código', key: 'codigo', sortable: true },
   { title: 'Nombre', key: 'nombre', sortable: true },
   { title: 'Marca', key: 'marca', sortable: true },
   { title: 'Envase', key: 'envase', sortable: true },
-  { title: 'Precio', key: 'precio', sortable: true }
+  { title: 'Precio', key: 'precio', sortable: true, align: 'end' }
 ]
 
 onMounted(async () => {
@@ -30,6 +34,14 @@ async function loadProductos() {
     error.value = 'Error al cargar los productos'
   } finally {
     loading.value = false
+  }
+}
+
+function openImageModal(producto) {
+  if (producto.foto) {
+    selectedImage.value = producto.foto
+    selectedProductName.value = producto.nombre
+    imageDialog.value = true
   }
 }
 </script>
@@ -65,8 +77,23 @@ async function loadProductos() {
         loading-text="Cargando productos..."
         no-data-text="No hay productos disponibles"
       >
+        <template v-slot:item.foto="{ item }">
+          <v-avatar size="50" class="ma-1" rounded="lg" style="cursor: pointer;" @click="openImageModal(item)">
+            <v-img
+              v-if="item.foto"
+              :src="item.foto"
+              :alt="item.nombre"
+              cover
+              class="product-image"
+            ></v-img>
+            <v-icon v-else color="grey-lighten-1" size="30">mdi-package-variant</v-icon>
+          </v-avatar>
+        </template>
+        
         <template v-slot:item.precio="{ item }">
-          ${{ item.precio }}
+          <div class="text-body-1 font-weight-bold text-success text-right">
+            {{ formatCurrency(item.precio) }}
+          </div>
         </template>
         
         <template v-slot:item.envase="{ item }">
@@ -74,5 +101,47 @@ async function loadProductos() {
         </template>
       </v-data-table>
     </v-card>
+
+    <!-- Modal para mostrar imagen del producto -->
+    <v-dialog v-model="imageDialog" max-width="600px">
+      <v-card>
+        <v-card-title class="d-flex justify-space-between align-center">
+          <span>{{ selectedProductName }}</span>
+          <v-btn
+            icon="mdi-close"
+            variant="text"
+            @click="imageDialog = false"
+          ></v-btn>
+        </v-card-title>
+        <v-card-text class="pa-0">
+          <v-img
+            v-if="selectedImage"
+            :src="selectedImage"
+            :alt="selectedProductName"
+            contain
+            max-height="400"
+            class="mx-auto"
+          ></v-img>
+        </v-card-text>
+      </v-card>
+    </v-dialog>
   </div>
 </template>
+
+<style scoped>
+.product-image {
+  transition: transform 0.2s ease;
+}
+
+.product-image:hover {
+  transform: scale(1.1);
+}
+
+.text-success {
+  color: #4caf50 !important;
+}
+
+.v-data-table :deep(tr:hover) {
+  background-color: rgba(25, 118, 210, 0.04);
+}
+</style>

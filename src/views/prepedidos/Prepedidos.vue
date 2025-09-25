@@ -1,6 +1,9 @@
 <script setup>
 import { ref, onMounted } from 'vue'
-import api from '../../services/api'
+import { useRouter } from 'vue-router'
+import api from '@/services/api'
+
+const router = useRouter()
 
 const prepedidos = ref([])
 const loading = ref(true)
@@ -9,10 +12,8 @@ const dialog = ref(false)
 const selectedPrepedido = ref(null)
 
 const headers = [
-  { title: 'ID', key: 'id', sortable: true },
-  { title: 'Cliente', key: 'cliente', sortable: true },
   { title: 'Fecha', key: 'fecha', sortable: true },
-  { title: 'Total', key: 'total', sortable: true },
+  { title: 'Total', key: 'total', sortable: true, align: 'end' },
   { title: 'Estado', key: 'estado', sortable: true },
   { title: 'Acciones', key: 'actions', sortable: false }
 ]
@@ -25,7 +26,7 @@ async function loadPrepedidos() {
   try {
     loading.value = true
     const response = await api.get('/prepedidos')
-    prepedidos.value = response.data
+    prepedidos.value = response.data.data || []
   } catch (err) {
     console.error('Error al cargar prepedidos:', err)
     error.value = 'Error al cargar los prepedidos'
@@ -39,22 +40,26 @@ function viewPrepedido(prepedido) {
   dialog.value = true
 }
 
-async function convertToPedido(prepedidoId) {
+function editPrepedido(prepedidoId) {
+  router.push(`/prepedidos/editar/${prepedidoId}`)
+}
+
+async function enviarPrepedido(prepedidoId) {
   try {
-    await api.post(`/prepedidos/${prepedidoId}/convert`)
+    await api.put(`/prepedidos/${prepedidoId}/enviar`)
     await loadPrepedidos()
     // Mostrar mensaje de éxito
   } catch (err) {
-    console.error('Error al convertir prepedido:', err)
+    console.error('Error al enviar prepedido:', err)
     // Mostrar mensaje de error
   }
 }
 
 function getStatusColor(estado) {
   switch (estado) {
-    case 'pendiente': return 'orange'
-    case 'aprobado': return 'green'
-    case 'rechazado': return 'red'
+    case 'borrador': return 'orange'
+    case 'enviado': return 'green'
+    case 'cerrado': return 'grey'
     default: return 'grey'
   }
 }
@@ -68,7 +73,7 @@ function getStatusColor(estado) {
         <p class="text-subtitle-1 text-grey-darken-1">Gestión de prepedidos pendientes</p>
       </v-col>
       <v-col cols="auto">
-        <v-btn color="primary" prepend-icon="mdi-plus">
+        <v-btn color="primary" prepend-icon="mdi-plus" @click="router.push('/prepedidos/nuevo')">
           Nuevo Prepedido
         </v-btn>
       </v-col>
@@ -83,13 +88,14 @@ function getStatusColor(estado) {
         :loading="loading"
         loading-text="Cargando prepedidos..."
         no-data-text="No hay prepedidos disponibles"
+        :sort-by="[{ key: 'fecha', order: 'desc' }]"
       >
         <template v-slot:item.fecha="{ item }">
-          {{ new Date(item.fecha).toLocaleDateString() }}
+          {{ new Date(item.fecha_creacion).toLocaleDateString() }}
         </template>
         
         <template v-slot:item.total="{ item }">
-          {{ item.total }}€
+          €{{ parseFloat(item.total_estimado || 0).toFixed(2) }}
         </template>
         
         <template v-slot:item.estado="{ item }">
@@ -103,19 +109,29 @@ function getStatusColor(estado) {
         </template>
         
         <template v-slot:item.actions="{ item }">
+          <!-- Siempre mostrar ver -->
           <v-btn
             icon="mdi-eye"
             size="small"
             variant="text"
             @click="viewPrepedido(item)"
           ></v-btn>
+          <!-- Solo para prepedidos en borrador -->
           <v-btn
-            v-if="item.estado === 'pendiente'"
-            icon="mdi-check"
+            v-if="item.estado === 'borrador'"
+            icon="mdi-pencil"
+            size="small"
+            variant="text"
+            color="primary"
+            @click="editPrepedido(item.id)"
+          ></v-btn>
+          <v-btn
+            v-if="item.estado === 'borrador'"
+            icon="mdi-send"
             size="small"
             variant="text"
             color="success"
-            @click="convertToPedido(item.id)"
+            @click="enviarPrepedido(item.id)"
           ></v-btn>
         </template>
       </v-data-table>
@@ -133,7 +149,7 @@ function getStatusColor(estado) {
               <strong>Cliente:</strong> {{ selectedPrepedido.cliente }}
             </v-col>
             <v-col cols="6">
-              <strong>Fecha:</strong> {{ new Date(selectedPrepedido.fecha).toLocaleDateString() }}
+              <strong>Fecha:</strong> {{ new Date(selectedPrepedido.fecha_creacion).toLocaleDateString() }}
             </v-col>
             <v-col cols="6">
               <strong>Estado:</strong> 
@@ -142,7 +158,10 @@ function getStatusColor(estado) {
               </v-chip>
             </v-col>
             <v-col cols="6">
-              <strong>Total:</strong> {{ selectedPrepedido.total }}€
+              <strong>Total:</strong> €{{ parseFloat(selectedPrepedido.total_estimado || 0).toFixed(2) }}
+            </v-col>
+            <v-col cols="6">
+              <strong>Items:</strong> {{ selectedPrepedido.total_items }}
             </v-col>
           </v-row>
           
@@ -167,12 +186,20 @@ function getStatusColor(estado) {
             Cerrar
           </v-btn>
           <v-btn
-            v-if="selectedPrepedido.estado === 'pendiente'"
+            v-if="selectedPrepedido.estado === 'borrador'"
+            color="primary"
+            variant="elevated"
+            @click="editPrepedido(selectedPrepedido.id); dialog = false"
+          >
+            Editar
+          </v-btn>
+          <v-btn
+            v-if="selectedPrepedido.estado === 'borrador'"
             color="success"
             variant="elevated"
-            @click="convertToPedido(selectedPrepedido.id); dialog = false"
+            @click="enviarPrepedido(selectedPrepedido.id); dialog = false"
           >
-            Convertir a Pedido
+            Enviar
           </v-btn>
         </v-card-actions>
       </v-card>

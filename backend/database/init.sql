@@ -25,11 +25,14 @@ CREATE TABLE IF NOT EXISTS prepedidos_items (
     id INT AUTO_INCREMENT PRIMARY KEY,
     prepedido_id INT NOT NULL,
     producto_id INT NOT NULL,
+    descripcion VARCHAR(255) NOT NULL,
     cantidad INT NOT NULL CHECK (cantidad > 0),
-    precio_unitario DECIMAL(10,2) NOT NULL CHECK (precio_unitario >= 0),
+    unidad VARCHAR(50) DEFAULT 'unidad',
+    precio_estimado DECIMAL(10,2) DEFAULT 0 CHECK (precio_estimado >= 0),
+    observaciones TEXT,
+    fecha_creacion DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (prepedido_id) REFERENCES prepedidos_cabecera(id) ON DELETE CASCADE,
     FOREIGN KEY (producto_id) REFERENCES productos(id) ON DELETE CASCADE,
-    UNIQUE KEY unique_prepedido_producto (prepedido_id, producto_id),
     INDEX idx_prepedido (prepedido_id),
     INDEX idx_producto (producto_id)
 );
@@ -69,17 +72,17 @@ INSERT INTO ofertas (titulo, descripcion, fecha_inicio, fecha_fin, descuento_por
 ('Oferta especial del mes', '¡Descuento del 10% durante este mes!', DATE_FORMAT(CURDATE(), '%Y-%m-01'), LAST_DAY(CURDATE()), 10.00, 1, NULL, 344);
 
 -- Sample pre-orders (for testing)
--- Note: These assume cliente_id 1 exists
+-- Note: These assume cliente_id 14 exists
 INSERT INTO prepedidos_cabecera (cliente_id, estado, observaciones) VALUES
-(1, 'borrador', 'Pedido de prueba en borrador'),
-(1, 'enviado', 'Pedido de prueba enviado');
+(14, 'borrador', 'Pedido de prueba en borrador'),
+(14, 'enviado', 'Pedido de prueba enviado');
 
 -- Sample pre-order items (for testing)
 -- Note: These assume producto_id 1, 2 exist
-INSERT INTO prepedidos_items (prepedido_id, producto_id, cantidad, precio_unitario) VALUES
-(1, 1, 5, 25.50),
-(1, 2, 3, 18.75),
-(2, 1, 2, 25.50);
+INSERT INTO prepedidos_items (prepedido_id, producto_id, descripcion, cantidad, unidad, precio_estimado, observaciones) VALUES
+(1, 1, 'Producto de prueba 1', 5, 'unidad', 25.50, 'Observaciones del producto 1'),
+(1, 2, 'Producto de prueba 2', 3, 'kg', 18.75, 'Observaciones del producto 2'),
+(2, 1, 'Producto de prueba 1', 2, 'unidad', 25.50, NULL);
 
 -- Update some products with sample images (small base64 encoded images for testing)
 -- This is a simple 1x1 pixel red image in base64

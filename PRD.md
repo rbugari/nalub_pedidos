@@ -3,7 +3,7 @@
 ## 1. Resumen Ejecutivo
 
 ### 1.1 Objetivo del Proyecto
-Desarrollar una aplicación web que permita a los clientes de Nalub crear pre-pedidos que serán posteriormente procesados y ejecutados por administradores, integrándose con el sistema existente de productos, clientes y pedidos.
+Desarrollar una aplicación web individual para cada cliente de Nalub, que permita a un cliente específico autenticado crear y gestionar sus propios pre-pedidos, consultar su información de deuda personal y acceder a su historial de pedidos. La aplicación está diseñada para uso exclusivo del cliente logueado, sin acceso a información de otros clientes.
 
 ### 1.2 Alcance
 - Sistema de autenticación para clientes usando tabla `clientes` existente
@@ -20,20 +20,79 @@ Desarrollar una aplicación web que permita a los clientes de Nalub crear pre-pe
 - **Sesión**: Mantenimiento de sesión con JWT
 - **Perfil**: Cambio de contraseña desde área de perfil
 
-### 2.2 Dashboard Principal
-- **Información de Deuda**: Consulta y muestra el saldo/deuda actual del cliente desde tabla `clientes`
-- **Estado de Pre-Pedidos**: Verifica si el cliente tiene pre-pedidos abiertos (estado 'borrador' o 'enviado')
-- **Promociones del Mes**: Sección para mostrar promociones vigentes del mes en curso (solo lectura desde sistema central)
-- **Navegación Condicional**: 
-  - Si tiene pre-pedido abierto: botón "Editar Pre-Pedido"
-  - Si no tiene pre-pedido abierto: botón "Crear Pre-Pedido"
-- **Pedidos Históricos**: Acceso a consulta de pedidos anteriores desde tabla `pedidos`
-- **Perfil de Usuario**: Información básica del cliente y acceso a configuración
-- **Resumen Visual**: Cards informativos con estado actual del cliente
-- **Header**: Consulta de deuda actual del cliente desde tabla `clientes`
-- **Información**: Nombre del cliente y datos básicos
-- **Navegación**: Acceso a crear pre-pedidos y ver historial
-- **Pedidos Históricos**: Consulta desde tabla `pedidos` existente
+### 2.1.1 Estructura de Clientes Primarios y Secundarios
+**IMPORTANTE**: Cada cliente en el sistema tiene una estructura de cuentas primarias y secundarias:
+
+- **Cliente Primario**: Identificado por el campo `id` en la tabla `clientes`
+- **Cliente Secundario**: Identificado por el campo `idsecundario` en la tabla `clientes`
+- **Relación**: El `idsecundario` de la cuenta primaria coincide con el `id` de la cuenta secundaria, y la cuenta secundaria referencia a la primaria
+- **Pedidos y Deudas**: Tanto los pedidos como las deudas pueden estar asociados a cualquiera de las dos cuentas (primaria o secundaria)
+- **Diferenciación**: Es crucial diferenciar entre pedidos/deudas de la cuenta primaria vs secundaria usando los campos:
+  - `tipo_cliente`: 'principal' | 'secundario' | 'desconocido'
+  - `es_principal`: TRUE | FALSE
+
+**Consulta SQL para Pedidos con Diferenciación de Cuentas**:
+```sql
+SELECT 
+    p.id, p.fechaEntrega, p.estado, p.importeTotal, 
+    COALESCE(SUM(pi.cantidad), 0) as cantidadBultos, 
+    CASE 
+        WHEN p.cliente = c.id THEN 'principal' 
+        WHEN p.cliente = c.idsecundario THEN 'secundario' 
+        ELSE 'desconocido' 
+    END AS tipo_cliente, 
+    CASE 
+        WHEN p.cliente = c.id THEN TRUE 
+        ELSE FALSE 
+    END AS es_principal 
+FROM clientes c 
+JOIN pedidos p ON (p.cliente = c.id OR p.cliente = c.idsecundario) 
+LEFT JOIN pedidoitems pi ON p.id = pi.pedidoId 
+WHERE c.id = ? AND p.fechaEntrega >= DATE_SUB(CURDATE(), INTERVAL 365 DAY) 
+GROUP BY p.id, p.fechaEntrega, p.estado, p.importeTotal, tipo_cliente, es_principal 
+ORDER BY p.fechaEntrega DESC;
+```
+
+### 2.2 Dashboard Principal (Cliente Individual)
+- **Información Personal de Deuda**: Muestra únicamente la deuda actual del cliente logueado desde tabla `clientes`
+  - Deuda Actual: Monto adeudado por el cliente
+  - Días de Deuda: Días transcurridos desde el último pago
+  - Fecha Último Pago: Fecha del último pago registrado
+  - Estado de Deuda: Indicador visual (Al día/Vencida/Muy vencida)
+- **Identificación del Cliente**: Header con el nombre del cliente logueado
+- **Estado Personal de Pre-Pedidos**: Verifica si el cliente logueado tiene pre-pedidos abiertos
+- **Métricas de Pedidos**: Muestra contadores diferenciados de pedidos del año actual
+  - Total Pedidos: Suma total de pedidos del cliente (principales + secundarios)
+  - Cuenta Principal: Pedidos asociados al ID principal del cliente
+  - Cuenta Secundaria: Pedidos asociados al ID secundario del cliente (solo si idsecundario ≠ id)
+- **Promociones del Mes**: Ofertas vigentes aplicables al cliente
+- **Navegación Personal**: 
+  - Acceso a crear/editar pre-pedidos propios
+  - Consulta de historial de pedidos personal
+  - Gestión de perfil individual
+- **Restricción de Seguridad**: La aplicación NUNCA muestra información de otros clientes, solo del usuario autenticado
+
+#### 2.2.1 Lógica de Conteo de Pedidos en Dashboard
+**IMPORTANTE**: El dashboard implementa una lógica especial para evitar conteo duplicado de pedidos:
+
+- **Caso Normal**: Cuando `idsecundario ≠ id`, se cuentan por separado:
+  - Pedidos Principales: `COUNT(*) WHERE p.cliente = c.id`
+  - Pedidos Secundarios: `COUNT(*) WHERE p.cliente = c.idsecundario`
+
+- **Caso Especial**: Cuando `idsecundario = id` (cliente sin cuenta secundaria real):
+  - Pedidos Principales: `COUNT(*) WHERE p.cliente = c.id`
+  - Pedidos Secundarios: `0` (se evita el conteo duplicado con condición `c.idsecundario != c.id`)
+
+**Consulta SQL Corregida para Dashboard**:
+```sql
+SELECT 
+    (SELECT COUNT(*) FROM pedidos p WHERE p.cliente = c.id AND YEAR(p.fechaEntrega) = YEAR(CURDATE())) as pedidos_principales,
+    (SELECT COUNT(*) FROM pedidos p WHERE p.cliente = c.idsecundario AND c.idsecundario != c.id AND YEAR(p.fechaEntrega) = YEAR(CURDATE())) as pedidos_secundarios
+FROM clientes c
+WHERE c.id = ?
+```
+
+Esta corrección garantiza que la suma de pedidos principales + secundarios = total de pedidos.
 
 ### 2.3 Módulo de Pre-Pedidos
 - **Creación**: Formulario con cabecera e ítems múltiples
@@ -394,32 +453,33 @@ backend/
 │ [Ver Detalle]                       │
 └─────────────────────────────────────┘
 
-### 6.3 Dashboard Principal
+### 6.3 Dashboard Principal (Diseño Compacto v1.2)
 ┌─────────────────────────────────────┐
 │ Dashboard - Bienvenido [Nombre]     │
 ├─────────────────────────────────────┤
-│ 💰 Estado de Cuenta                 │
-│ Deuda Actual: $ 2,450.00           │
-│ Días de deuda: 25 días             │
-│ Último Pago: 15/01/2024            │
-│ Estado: ⚠️ Vencida                  │
+│ 💰 Mi Deuda: $2,450  📅 25 días    │
+│ 📆 Último: 15/01/24  ⚠️ Vencida    │
 ├─────────────────────────────────────┤
-│ 📋 Pre-Pedidos                     │
-│ ● Tienes 1 pre-pedido abierto      │
-│ [Editar Pre-Pedido] [Ver Todos]     │
-│ ○ No tienes pre-pedidos abiertos    │
-│ [Crear Pre-Pedido] [Ver Todos]      │
+│ 📊 Pedidos 2025: 8  👤 Principal:8 │
+│ 👥 Secundaria: 0    🛒 Abiertos: 1 │
 ├─────────────────────────────────────┤
-│ 🎯 Ofertas del Mes                 │
-│ • 15% OFF en Aceites Valvoline     │
-│ • 2x1 en Filtros de Aire          │
-│ • Descuento por volumen +50L       │
-│ [Ver Todas las Ofertas]            │
+│ 🎯 Ofertas Destacadas (Compactas)   │
+│ [IMG] 15% OFF Aceites    [Añadir]  │
+│ [IMG] 2x1 Filtros       [Añadir]  │
+│ [IMG] Desc. Volumen     [Añadir]  │
 ├─────────────────────────────────────┤
-│ 📊 Accesos Rápidos                 │
-│ [Crear Pre-Pedido] [Ofertas]       │
-│ [Pedidos Históricos] [Mi Perfil]    │
+│ 📊 Acciones Rápidas (Compactas)     │
+│ [Pre-Pedido] [Historial] [Perfil]   │
 └─────────────────────────────────────┘
+
+**Características del Diseño Compacto**:
+- **Tarjetas Uniformes**: Altura fija de 90px para todas las secciones
+- **Información Condensada**: Múltiples datos en una sola línea
+- **Iconos Pequeños**: 22px para mejor aprovechamiento del espacio
+- **Botones Compactos**: 32px de altura con texto reducido
+- **Ofertas con Imágenes**: Fotos de productos 90x90px con información esencial
+- **Tipografía Optimizada**: Tamaños de fuente reducidos manteniendo legibilidad
+- **Espaciado Mínimo**: Padding y márgenes optimizados para máxima densidad de información
 #### Dashboard
 - `GET /api/dashboard/summary` - Resumen completo del dashboard
 - `GET /api/dashboard/debt-details` - Deuda con días de antigüedad y estado
@@ -429,6 +489,54 @@ backend/
 #### Ofertas/Promociones (Solo Lectura - Sistema Central)
 - `GET /api/ofertas/vigentes-mes` - Ofertas vigentes del mes actual
 - `GET /api/ofertas/:id` - Detalle de oferta específica
+
+## 6. Historial de Cambios
+
+### v1.2 - Optimización de Diseño Dashboard (Enero 2025)
+**Mejora Implementada**: Diseño compacto y uniforme para todas las tarjetas del dashboard
+
+**Descripción de la Mejora**:
+- Implementación de diseño minimalista con tarjetas de altura uniforme
+- Optimización del espacio vertical para mostrar más información sin scroll
+- Mejora en la experiencia visual y usabilidad del dashboard
+
+**Cambios Técnicos Implementados**:
+- **Altura Uniforme**: Todas las tarjetas ahora tienen 90px de altura (reducción de 30px)
+- **Padding Optimizado**: Reducción del padding interno para maximizar espacio útil
+- **Iconos Compactos**: Tamaño reducido de iconos de 28px a 22px
+- **Tipografía Optimizada**: Tamaños de fuente ajustados manteniendo legibilidad
+- **Botones Compactos**: Altura reducida a 32px y 28px respectivamente
+- **Espaciado Minimalista**: Márgenes y espacios internos optimizados
+
+**Elementos Afectados**:
+- Tarjetas de información personal (deuda, días de deuda, último pago, pre-pedidos)
+- Estadísticas de pedidos (año actual, cuenta principal/secundaria)
+- Acciones rápidas con botones más compactos
+- Ofertas destacadas con imágenes de 90x90px
+
+**Archivos Modificados**:
+- `frontend/src/views/dashboard/Dashboard.vue` (estilos CSS y clases)
+- `PRD.md` (documentación actualizada)
+
+**Impacto**: Dashboard significativamente más compacto que mantiene funcionalidad y legibilidad, permitiendo ver más información en pantalla.
+
+### v1.1 - Corrección Dashboard (Enero 2025)
+**Problema Resuelto**: Conteo duplicado de pedidos en dashboard cuando `idsecundario = id`
+
+**Descripción del Issue**:
+- El dashboard mostraba inconsistencias: Total Pedidos = 8, pero Cuenta Principal = 8 y Cuenta Secundaria = 8
+- La suma incorrecta (8 ≠ 8 + 8) se debía a que clientes con `idsecundario = id` contaban los mismos pedidos dos veces
+
+**Solución Implementada**:
+- Modificación en `dashboardController.js` línea 52
+- Agregada condición `c.idsecundario != c.id` en consulta de pedidos secundarios
+- Resultado: Cuenta Principal = 8, Cuenta Secundaria = 0, Total = 8 (suma correcta)
+
+**Archivos Modificados**:
+- `backend/controllers/dashboardController.js`
+- `PRD.md` (documentación actualizada)
+
+**Impacto**: Garantiza consistencia lógica en métricas del dashboard para todos los tipos de clientes.
 - `GET /api/ofertas/por-producto/:producto_id` - Ofertas aplicables a un producto
 - `GET /api/ofertas/destacadas` - Top 3 ofertas para dashboard
 

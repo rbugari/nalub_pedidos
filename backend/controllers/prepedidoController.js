@@ -29,7 +29,7 @@ const createPrepedido = async (req, res) => {
       const item = items[i];
       
       // Validar que el producto existe
-      const productoQuery = 'SELECT id, descripcion FROM productos WHERE id = ?';
+      const productoQuery = 'SELECT id, nombre FROM productos WHERE id = ?';
       const [productos] = await connection.execute(productoQuery, [item.productoId]);
       
       if (productos.length === 0) {
@@ -45,11 +45,11 @@ const createPrepedido = async (req, res) => {
       await connection.execute(itemQuery, [
         prepedidoId,
         item.productoId,
-        item.descripcion,
-        item.cantidad,
+        productos[0].nombre,
+        item.cantidad || 1,
         item.unidad || 'unidad',
         item.precioEstimado || 0,
-        item.observaciones || ''
+        item.observaciones || null
       ]);
     }
     
@@ -82,6 +82,8 @@ const getPrepedidos = async (req, res) => {
     const clienteId = req.user.id;
     const { estado, limite = 10, pagina = 1 } = req.query;
     
+    console.log('🔍 getPrepedidos - Parámetros recibidos:', { clienteId, estado, limite, pagina });
+    
     let whereClause = 'WHERE pc.cliente_id = ?';
     let params = [clienteId];
     
@@ -98,21 +100,29 @@ const getPrepedidos = async (req, res) => {
         pc.observaciones,
         pc.estado,
         pc.fecha_creacion,
+        c.nombre as cliente,
         COUNT(pi.id) as total_items,
-        COALESCE(SUM(pi.precio_unitario * pi.cantidad), 0) as total_estimado
+        COALESCE(SUM(pi.precio_estimado * pi.cantidad), 0) as total_estimado
       FROM prepedidos_cabecera pc
       LEFT JOIN prepedidos_items pi ON pc.id = pi.prepedido_id
+      LEFT JOIN clientes c ON pc.cliente_id = c.id
       ${whereClause}
-      GROUP BY pc.id
+      GROUP BY pc.id, c.nombre
       ORDER BY pc.fecha_creacion DESC
       LIMIT ? OFFSET ?
     `;
     
     params.push(parseInt(limite), parseInt(offset));
     
+    console.log('🔍 getPrepedidos - Query SQL:', query);
+    console.log('🔍 getPrepedidos - Parámetros SQL:', params);
+    
     const prepedidos = await executeQuery(query, params);
     
-    res.json({
+    console.log('🔍 getPrepedidos - Resultado de la consulta:', prepedidos);
+    console.log('🔍 getPrepedidos - Número de filas:', prepedidos.length);
+    
+    const responseData = {
       success: true,
       data: prepedidos,
       pagination: {
@@ -120,10 +130,14 @@ const getPrepedidos = async (req, res) => {
         limite: parseInt(limite),
         total: prepedidos.length
       }
-    });
+    };
+    
+    console.log('🔍 getPrepedidos - Respuesta final:', JSON.stringify(responseData, null, 2));
+    
+    res.json(responseData);
     
   } catch (error) {
-    console.error('Error obteniendo pre-pedidos:', error);
+    console.error('❌ Error obteniendo pre-pedidos:', error);
     res.status(500).json({
       success: false,
       message: 'Error interno del servidor'
@@ -155,19 +169,32 @@ const getPrepedido = async (req, res) => {
     // Obtener items
     const itemsQuery = `
       SELECT 
-        pi.*,
-        p.descripcion as producto_descripcion
+        pi.id,
+        pi.producto_id,
+        pi.descripcion,
+        pi.cantidad,
+        pi.unidad,
+        pi.precio_estimado,
+        pi.observaciones,
+        p.nombre as producto_nombre,
+        p.codigo as producto_codigo
       FROM prepedidos_items pi
-      LEFT JOIN productos p ON pi.producto_id = p.id
+      JOIN productos p ON pi.producto_id = p.id
       WHERE pi.prepedido_id = ?
-      ORDER BY pi.id
     `;
     
     const items = await executeQuery(itemsQuery, [id]);
     
+    // Calcular total estimado
+    const totalEstimado = items.reduce((total, item) => {
+      return total + (parseFloat(item.precio_estimado) * parseInt(item.cantidad));
+    }, 0);
+    
     const prepedido = {
       ...cabeceras[0],
-      items
+      items,
+      total_estimado: totalEstimado,
+      total_items: items.length
     };
     
     res.json({
@@ -214,7 +241,7 @@ const updatePrepedido = async (req, res) => {
     // Actualizar cabecera
     const updateCabeceraQuery = `
       UPDATE prepedidos_cabecera 
-      SET observaciones = ?, fecha_actualizacion = NOW()
+      SET observaciones = ?
       WHERE id = ?
     `;
     
@@ -228,7 +255,7 @@ const updatePrepedido = async (req, res) => {
       const item = items[i];
       
       // Validar producto
-      const productoQuery = 'SELECT id FROM productos WHERE id = ?';
+      const productoQuery = 'SELECT id, nombre FROM productos WHERE id = ?';
       const [productos] = await connection.execute(productoQuery, [item.productoId]);
       
       if (productos.length === 0) {
@@ -244,11 +271,11 @@ const updatePrepedido = async (req, res) => {
       await connection.execute(itemQuery, [
         id,
         item.productoId,
-        item.descripcion,
-        item.cantidad,
+        productos[0].nombre,
+        item.cantidad || 1,
         item.unidad || 'unidad',
         item.precioEstimado || 0,
-        item.observaciones || ''
+        item.observaciones || null
       ]);
     }
     
@@ -302,7 +329,7 @@ const enviarPrepedido = async (req, res) => {
     // Actualizar estado
     const updateQuery = `
       UPDATE prepedidos_cabecera 
-      SET estado = 'enviado', fecha_actualizacion = NOW()
+      SET estado = 'enviado'
       WHERE id = ?
     `;
     

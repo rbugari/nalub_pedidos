@@ -1,34 +1,53 @@
 <script setup>
 import { ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
+import { useAuthStore } from '../../stores/auth'
 import api from '../../services/api'
+import { formatCurrency } from '../../utils/currency'
 
 const router = useRouter()
+const route = useRoute()
+const authStore = useAuthStore()
 const pedidos = ref([])
 const loading = ref(true)
 const error = ref(null)
 const search = ref('')
 
 const headers = [
-  { title: 'ID', key: 'id', sortable: true },
-  { title: 'Cliente', key: 'cliente', sortable: true },
-  { title: 'Fecha', key: 'fecha', sortable: true },
-  { title: 'Total', key: 'total', sortable: true },
+  { title: 'Fecha Entrega', key: 'fechaEntrega', sortable: true },
+  { title: 'Tipo Cliente', key: 'tipo_cliente', sortable: true },
+  { title: 'Cantidad Bultos', key: 'cantidadBultos', sortable: true, align: 'end' },
+  { title: 'Importe Total', key: 'importeTotal', sortable: true, align: 'end' },
   { title: 'Estado', key: 'estado', sortable: true },
   { title: 'Acciones', key: 'actions', sortable: false }
 ]
 
 onMounted(async () => {
+  console.log('🔍 Frontend: Componente PedidosList montado, iniciando carga...')
+  console.log('🔍 Auth store state:', authStore.isAuthenticated)
+  console.log('🔍 Current route:', route.path)
+  console.log('🔍 About to call loadPedidos')
   await loadPedidos()
 })
 
 async function loadPedidos() {
+  console.log('🔍 loadPedidos function called')
   try {
+    console.log('🔍 Frontend: Iniciando carga de pedidos...')
     loading.value = true
     const response = await api.get('/pedidos')
-    pedidos.value = response.data.data
+    console.log('🔍 Frontend: Respuesta del API:', response.data)
+    if (response.data.success && response.data.data) {
+      pedidos.value = response.data.data
+      console.log('🔍 Frontend: Pedidos cargados:', pedidos.value.length)
+    } else {
+      pedidos.value = []
+      console.log('🔍 Frontend: No se encontraron pedidos o respuesta sin éxito')
+      console.log('🔍 Frontend: Success:', response.data.success)
+      console.log('🔍 Frontend: Data:', response.data.data)
+    }
   } catch (err) {
-    console.error('Error al cargar pedidos:', err)
+    console.error('🔍 Frontend: Error al cargar pedidos:', err)
     error.value = 'Error al cargar los pedidos'
   } finally {
     loading.value = false
@@ -48,6 +67,13 @@ function getStatusColor(estado) {
     default: return 'grey'
   }
 }
+
+function formatDate(dateString) {
+  if (!dateString) return 'Sin fecha'
+  return new Date(dateString).toLocaleDateString('es-AR')
+}
+
+
 </script>
 
 <template>
@@ -55,7 +81,7 @@ function getStatusColor(estado) {
     <v-row class="mb-6">
       <v-col>
         <h1 class="text-h4 font-weight-bold">Pedidos</h1>
-        <p class="text-subtitle-1 text-grey-darken-1">Historial de todos los pedidos</p>
+        <p class="text-subtitle-1 text-grey-darken-1">Pedidos de los últimos 365 días</p>
       </v-col>
     </v-row>
 
@@ -81,12 +107,26 @@ function getStatusColor(estado) {
         loading-text="Cargando pedidos..."
         no-data-text="No hay pedidos disponibles"
       >
-        <template v-slot:item.fecha="{ item }">
-          {{ new Date(item.fecha).toLocaleDateString() }}
+        <template v-slot:item.fechaEntrega="{ item }">
+          {{ formatDate(item.fechaEntrega) }}
         </template>
         
-        <template v-slot:item.total="{ item }">
-          {{ item.total }}€
+        <template v-slot:item.importeTotal="{ item }">
+          <span class="font-weight-bold">{{ formatCurrency(item.importeTotal) }}</span>
+        </template>
+        
+        <template v-slot:item.tipo_cliente="{ item }">
+          <v-chip
+            :color="item.tipo_cliente === 'principal' ? 'primary' : 'secondary'"
+            size="small"
+            variant="elevated"
+          >
+            {{ item.tipo_cliente === 'principal' ? 'Principal' : 'Secundario' }}
+          </v-chip>
+        </template>
+        
+        <template v-slot:item.cantidadBultos="{ item }">
+          {{ item.cantidadBultos }}
         </template>
         
         <template v-slot:item.estado="{ item }">

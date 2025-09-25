@@ -2,15 +2,13 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '../../services/api'
+import { formatCurrency } from '../../utils/currency'
 
 const route = useRoute()
 const router = useRouter()
 const pedido = ref(null)
 const loading = ref(true)
 const error = ref(null)
-const editDialog = ref(false)
-const newStatus = ref('')
-
 const statusOptions = [
   { value: 'pendiente', title: 'Pendiente', color: 'orange' },
   { value: 'en_proceso', title: 'En Proceso', color: 'blue' },
@@ -27,7 +25,6 @@ async function loadPedido() {
     loading.value = true
     const response = await api.get(`/pedidos/${route.params.id}`)
     pedido.value = response.data
-    newStatus.value = pedido.value.estado
   } catch (err) {
     console.error('Error al cargar pedido:', err)
     error.value = 'Error al cargar el pedido'
@@ -36,19 +33,7 @@ async function loadPedido() {
   }
 }
 
-async function updateStatus() {
-  try {
-    await api.put(`/pedidos/${pedido.value.id}`, {
-      estado: newStatus.value
-    })
-    pedido.value.estado = newStatus.value
-    editDialog.value = false
-    // Mostrar mensaje de éxito
-  } catch (err) {
-    console.error('Error al actualizar estado:', err)
-    // Mostrar mensaje de error
-  }
-}
+
 
 function getStatusColor(estado) {
   const status = statusOptions.find(s => s.value === estado)
@@ -77,15 +62,7 @@ function goBack() {
         ></v-btn>
         <span class="text-h4 font-weight-bold">Pedido #{{ route.params.id }}</span>
       </v-col>
-      <v-col cols="auto" v-if="pedido">
-        <v-btn 
-          color="primary" 
-          prepend-icon="mdi-pencil"
-          @click="editDialog = true"
-        >
-          Editar Estado
-        </v-btn>
-      </v-col>
+
     </v-row>
 
     <v-alert v-if="error" type="error" class="mb-4">{{ error }}</v-alert>
@@ -121,7 +98,7 @@ function goBack() {
                   </v-chip>
                 </v-col>
                 <v-col cols="6">
-                  <strong>Total:</strong> {{ pedido.total }}€
+                  <strong>Total:</strong> {{ formatCurrency(pedido.total) }}
                 </v-col>
                 <v-col cols="12" v-if="pedido.notas">
                   <strong>Notas:</strong> {{ pedido.notas }}
@@ -137,16 +114,16 @@ function goBack() {
             <v-card-text>
               <div class="d-flex justify-space-between mb-2">
                 <span>Subtotal:</span>
-                <span>{{ (pedido.total * 0.79).toFixed(2) }}€</span>
+                <span>{{ formatCurrency(pedido.total * 0.79) }}</span>
               </div>
               <div class="d-flex justify-space-between mb-2">
                 <span>IVA (21%):</span>
-                <span>{{ (pedido.total * 0.21).toFixed(2) }}€</span>
+                <span>{{ formatCurrency(pedido.total * 0.21) }}</span>
               </div>
               <v-divider class="my-2"></v-divider>
               <div class="d-flex justify-space-between font-weight-bold">
                 <span>Total:</span>
-                <span>{{ pedido.total }}€</span>
+                <span>{{ formatCurrency(pedido.total) }}</span>
               </div>
             </v-card-text>
           </v-card>
@@ -159,56 +136,25 @@ function goBack() {
         <v-card-text>
           <v-data-table
             :headers="[
-              { title: 'Producto', key: 'nombre' },
-              { title: 'Cantidad', key: 'cantidad' },
-              { title: 'Precio Unitario', key: 'precio' },
-              { title: 'Subtotal', key: 'subtotal' }
+              { title: 'Producto', key: 'producto.nombre' },
+              { title: 'Cantidad', key: 'cantidad', align: 'end' },
+              { title: 'Precio Unitario', key: 'precio_unitario', align: 'end' },
+              { title: 'Subtotal', key: 'subtotal', align: 'end' }
             ]"
-            :items="pedido.productos || []"
+            :items="pedido.items || []"
             hide-default-footer
           >
-            <template v-slot:item.precio="{ item }">
-              {{ item.precio }}€
+            <template v-slot:item.precio_unitario="{ item }">
+              {{ formatCurrency(item.precio_unitario) }}
             </template>
             <template v-slot:item.subtotal="{ item }">
-              {{ (item.cantidad * item.precio).toFixed(2) }}€
+              {{ formatCurrency(item.subtotal) }}
             </template>
           </v-data-table>
         </v-card-text>
       </v-card>
     </template>
 
-    <!-- Dialog para editar estado -->
-    <v-dialog v-model="editDialog" max-width="400px">
-      <v-card>
-        <v-card-title>Cambiar Estado del Pedido</v-card-title>
-        <v-card-text>
-          <v-select
-            v-model="newStatus"
-            :items="statusOptions"
-            item-title="title"
-            item-value="value"
-            label="Nuevo Estado"
-          >
-            <template v-slot:item="{ props, item }">
-              <v-list-item v-bind="props">
-                <template v-slot:prepend>
-                  <v-chip :color="item.raw.color" size="small"></v-chip>
-                </template>
-              </v-list-item>
-            </template>
-          </v-select>
-        </v-card-text>
-        <v-card-actions>
-          <v-spacer></v-spacer>
-          <v-btn color="grey" variant="text" @click="editDialog = false">
-            Cancelar
-          </v-btn>
-          <v-btn color="primary" variant="elevated" @click="updateStatus">
-            Guardar
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
+
   </div>
 </template>
