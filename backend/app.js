@@ -63,7 +63,7 @@ app.use('*', (req, res) => {
 
 const PORT = process.env.PORT || 3001;
 
-app.listen(PORT, async () => {
+const server = app.listen(PORT, async () => {
     console.log(`🚀 Server running on port ${PORT}`);
     console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
     
@@ -77,6 +77,34 @@ app.listen(PORT, async () => {
         console.log('❌ Database connection failed!');
         console.log('⚠️  Please check your database configuration in .env file');
     }
+});
+
+// Graceful shutdown handling
+process.on('SIGTERM', () => {
+    console.log('🛑 SIGTERM received, shutting down gracefully...');
+    server.close(() => {
+        console.log('✅ Process terminated');
+        process.exit(0);
+    });
+});
+
+process.on('SIGINT', () => {
+    console.log('🛑 SIGINT received, shutting down gracefully...');
+    server.close(() => {
+        console.log('✅ Process terminated');
+        process.exit(0);
+    });
+});
+
+// Keep the process alive
+process.on('uncaughtException', (err) => {
+    console.error('❌ Uncaught Exception:', err);
+    // Don't exit the process, just log the error
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+    // Don't exit the process, just log the error
 });
 
 module.exports = app;
