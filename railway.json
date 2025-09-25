@@ -1,0 +1,43 @@
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": {
+    "builder": "NIXPACKS",
+    "buildCommand": "cd backend && npm install"
+  },
+  "deploy": {
+    "startCommand": "cd backend && npm start",
+    "healthcheckPath": "/api/health",
+    "healthcheckTimeout": 100
+  },
+  "environments": {
+    "testing": {
+      "variables": {
+        "NODE_ENV": "test",
+        "PORT": "$PORT",
+        "DB_HOST": "host.docker.internal",
+        "DB_PORT": "3306",
+        "DB_USER": "root",
+        "DB_PASSWORD": "",
+        "DB_NAME": "nalub_pedidos",
+        "JWT_SECRET": "$JWT_SECRET",
+        "JWT_EXPIRES_IN": "24h",
+        "FRONTEND_URL": "$FRONTEND_URL"
+      }
+    },
+    "production": {
+      "variables": {
+        "NODE_ENV": "production",
+        "PORT": "$PORT",
+        "DB_HOST": "$MYSQLHOST",
+        "DB_PORT": "$MYSQLPORT",
+        "DB_USER": "$MYSQLUSER",
+        "DB_PASSWORD": "$MYSQLPASSWORD",
+        "DB_NAME": "$MYSQLDATABASE",
+        "DATABASE_URL": "$DATABASE_URL",
+        "JWT_SECRET": "$JWT_SECRET",
+        "JWT_EXPIRES_IN": "24h",
+        "FRONTEND_URL": "$FRONTEND_URL"
+      }
+    }
+  }
+}

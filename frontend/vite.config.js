@@ -8,11 +8,29 @@ import vueDevTools from 'vite-plugin-vue-devtools'
 export default defineConfig({
   plugins: [
     vue(),
-    vueDevTools(),
+    // Solo incluir devtools en desarrollo
+    ...(process.env.NODE_ENV !== 'production' ? [vueDevTools()] : []),
   ],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url))
     },
   },
+  build: {
+    // Optimizaciones para producción
+    minify: 'terser',
+    sourcemap: false,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['vue', 'vue-router', 'pinia'],
+          ui: ['vuetify']
+        }
+      }
+    }
+  },
+  server: {
+    port: 5173,
+    host: true
+  }
 })
