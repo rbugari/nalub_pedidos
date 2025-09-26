@@ -1,7 +1,6 @@
 {
   "version": 2,
   "name": "nalub-pedidos-frontend",
-  "_comment": "Fixed .env conflict - force redeploy",
   "builds": [
     {
       "src": "frontend/package.json",
