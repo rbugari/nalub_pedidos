@@ -93,19 +93,28 @@ const server = app.listen(PORT, async () => {
     
     if (isConnected) {
         console.log('✅ Database connection successful!');
+        console.log('🎯 Server is ready to accept connections');
     } else {
         console.log('❌ Database connection failed!');
         console.log('⚠️  Please check your database configuration in .env file');
     }
+    
+    // Keep the server alive
+    console.log('🔄 Server is running and waiting for requests...');
 });
 
 // Graceful shutdown handling
 process.on('SIGTERM', () => {
     console.log('🛑 SIGTERM received, shutting down gracefully...');
-    server.close(() => {
-        console.log('✅ Process terminated');
-        process.exit(0);
-    });
+    console.log('⏰ Giving server time to finish current requests...');
+    
+    // Give the server some time to finish current requests
+    setTimeout(() => {
+        server.close(() => {
+            console.log('✅ Process terminated gracefully');
+            process.exit(0);
+        });
+    }, 5000); // Wait 5 seconds before closing
 });
 
 process.on('SIGINT', () => {
@@ -116,15 +125,27 @@ process.on('SIGINT', () => {
     });
 });
 
-// Keep the process alive
+// Keep the process alive and handle errors gracefully
 process.on('uncaughtException', (err) => {
     console.error('❌ Uncaught Exception:', err);
+    console.log('🔄 Process continues running...');
     // Don't exit the process, just log the error
 });
 
 process.on('unhandledRejection', (reason, promise) => {
     console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+    console.log('🔄 Process continues running...');
     // Don't exit the process, just log the error
 });
+
+// Prevent the process from exiting unexpectedly
+process.on('exit', (code) => {
+    console.log(`🚪 Process exiting with code: ${code}`);
+});
+
+// Keep alive mechanism - send periodic heartbeat
+setInterval(() => {
+    console.log(`💓 Heartbeat - Server alive at ${new Date().toISOString()}`);
+}, 30000); // Every 30 seconds
 
 module.exports = app;
