@@ -3,7 +3,27 @@ const { executeQuery } = require('../config/database');
 // Get dashboard data for the authenticated client only
 const getDashboardData = async (req, res) => {
     try {
-        console.log('🔍 Dashboard endpoint called for user:', req.user?.id);
+        // Validar que req.user existe
+        if (!req.user) {
+            console.error('❌ ERROR CRÍTICO: req.user es undefined en getDashboardData');
+            return res.status(401).json({
+                success: false,
+                message: 'Usuario no autenticado'
+            });
+        }
+
+        const userId = req.user.id;
+        
+        // Validar que userId es válido
+        if (!userId || typeof userId !== 'number' || userId <= 0) {
+            console.error('❌ ERROR CRÍTICO: userId inválido en getDashboardData:', userId);
+            return res.status(400).json({
+                success: false,
+                message: 'ID de usuario inválido'
+            });
+        }
+        
+        console.log('🔍 Dashboard endpoint called for user:', userId);
         
         // Obtener información de deuda del cliente logueado únicamente
         const clientQuery = `
@@ -21,7 +41,7 @@ const getDashboardData = async (req, res) => {
             WHERE id = ?
         `;
         
-        const clientData = await executeQuery(clientQuery, [req.user.id]);
+        const clientData = await executeQuery(clientQuery, [userId]);
         console.log('🔍 Datos del cliente logueado:', clientData[0]);
         
         // Verificar si el cliente tiene pre-pedidos abiertos (incluye cuentas primarias y secundarias)
@@ -32,7 +52,7 @@ const getDashboardData = async (req, res) => {
             WHERE c.id = ? AND pc.estado IN ('borrador', 'enviado')
         `;
         
-        const prepedidosData = await executeQuery(prepedidosQuery, [req.user.id]);
+        const prepedidosData = await executeQuery(prepedidosQuery, [userId]);
         
         // Obtener cantidad de pedidos del año actual (incluye cuentas primarias y secundarias)
         const pedidosAnoQuery = `
@@ -42,7 +62,7 @@ const getDashboardData = async (req, res) => {
             WHERE c.id = ? AND YEAR(p.fechaEntrega) = YEAR(CURDATE())
         `;
         
-        const pedidosAnoData = await executeQuery(pedidosAnoQuery, [req.user.id]);
+        const pedidosAnoData = await executeQuery(pedidosAnoQuery, [userId]);
         
         // Obtener información adicional sobre tipos de cuenta
         const cuentasInfoQuery = `
@@ -53,7 +73,7 @@ const getDashboardData = async (req, res) => {
             WHERE c.id = ?
         `;
         
-        const cuentasInfoData = await executeQuery(cuentasInfoQuery, [req.user.id]);
+        const cuentasInfoData = await executeQuery(cuentasInfoQuery, [userId]);
         
 
         
@@ -84,8 +104,8 @@ const getOfertasDestacadas = async (req, res) => {
     try {
         const query = `
             SELECT 
-                o.id, o.titulo, o.descripcion, o.fecha_inicio, o.fecha_fin,
-                o.descuento_porcentaje, o.descuento_monto, o.imagen_url,
+                o.id, o.titulo, o.fecha_inicio, o.fecha_fin,
+                o.precio_original, o.precio_oferta,
                 p.nombre as producto_nombre, 
                 CASE 
                     WHEN p.foto IS NOT NULL THEN CONCAT('data:image/jpeg;base64,', TO_BASE64(p.foto))
@@ -99,9 +119,11 @@ const getOfertasDestacadas = async (req, res) => {
                 AND o.fecha_fin >= CURDATE()
                 AND MONTH(o.fecha_inicio) = MONTH(CURDATE())
                 AND YEAR(o.fecha_inicio) = YEAR(CURDATE())
+                AND (p.id IS NULL OR p.stockActual > 0)
             ORDER BY 
                 CASE 
-                    WHEN o.descuento_porcentaje IS NOT NULL THEN o.descuento_porcentaje 
+                    WHEN o.precio_original > 0 AND o.precio_oferta > 0 
+                    THEN ((o.precio_original - o.precio_oferta) / o.precio_original) * 100
                     ELSE 0 
                 END DESC,
                 o.created_at DESC
@@ -110,9 +132,17 @@ const getOfertasDestacadas = async (req, res) => {
         
         const ofertas = await executeQuery(query);
         
+        // Formatear ofertas con precios directos
+        const ofertasFormateadas = ofertas.map(oferta => ({
+            ...oferta,
+            precio_original: oferta.precio_original || 0,
+            precio_oferta: oferta.precio_oferta || 0,
+            producto_precio: oferta.producto_precio || 0
+        }));
+        
         res.json({
             success: true,
-            data: ofertas
+            data: ofertasFormateadas
         });
         
     } catch (error) {

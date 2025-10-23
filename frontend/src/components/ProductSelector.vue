@@ -20,6 +20,7 @@ const selectedProduct = ref(null)
 const selectedMarca = ref('')
 const selectedCategoria = ref('')
 const selectedEnvase = ref('')
+const selectedCapacidad = ref('')
 const showFilters = ref(false)
 
 // Computed properties para filtros
@@ -38,6 +39,11 @@ const envasesUnicos = computed(() => {
   return envases.sort()
 })
 
+const capacidadesUnicas = computed(() => {
+  const capacidades = [...new Set(productos.value.map(p => p.litros).filter(Boolean))]
+  return capacidades.sort((a, b) => parseFloat(a) - parseFloat(b))
+})
+
 // Productos filtrados
 const productosFiltrados = computed(() => {
   let filtered = productos.value
@@ -54,6 +60,10 @@ const productosFiltrados = computed(() => {
     filtered = filtered.filter(p => p.envase === selectedEnvase.value)
   }
   
+  if (selectedCapacidad.value) {
+    filtered = filtered.filter(p => p.litros && p.litros.toString() === selectedCapacidad.value.toString())
+  }
+  
   return filtered
 })
 
@@ -62,8 +72,9 @@ const headers = [
   { title: 'Código', key: 'codigo', sortable: true },
   { title: 'Nombre', key: 'nombre', sortable: true },
   { title: 'Marca', key: 'marca', sortable: true },
-  { title: 'Envase', key: 'envase', sortable: true },
   { title: 'Precio', key: 'precio', sortable: true },
+  { title: 'Tipo de Envase', key: 'tipo_envase', sortable: true },
+  { title: 'Capacidad', key: 'litros', sortable: true },
   { title: 'Seleccionar', key: 'actions', sortable: false, width: '120px' }
 ]
 
@@ -100,6 +111,7 @@ function clearFilters() {
   selectedMarca.value = ''
   selectedCategoria.value = ''
   selectedEnvase.value = ''
+  selectedCapacidad.value = ''
   selectedProduct.value = null
   showFilters.value = false
 }
@@ -158,7 +170,7 @@ function toggleFilters() {
                 variant="outlined"
                 @click="clearFilters"
                 prepend-icon="mdi-filter-remove"
-                :disabled="!search && !selectedMarca && !selectedCategoria && !selectedEnvase"
+                :disabled="!search && !selectedMarca && !selectedCategoria && !selectedEnvase && !selectedCapacidad"
               >
                 Limpiar
               </v-btn>
@@ -169,7 +181,7 @@ function toggleFilters() {
           <v-expand-transition>
             <v-card v-show="showFilters" variant="outlined" class="mt-3 pa-3">
               <v-row>
-                <v-col cols="12" md="4">
+                <v-col cols="12" md="3">
                   <v-select
                     v-model="selectedMarca"
                     :items="marcasUnicas"
@@ -180,7 +192,7 @@ function toggleFilters() {
                     prepend-icon="mdi-tag"
                   ></v-select>
                 </v-col>
-                <v-col cols="12" md="4">
+                <v-col cols="12" md="3">
                   <v-select
                     v-model="selectedCategoria"
                     :items="categoriasUnicas"
@@ -191,7 +203,7 @@ function toggleFilters() {
                     prepend-icon="mdi-shape"
                   ></v-select>
                 </v-col>
-                <v-col cols="12" md="4">
+                <v-col cols="12" md="3">
                   <v-select
                     v-model="selectedEnvase"
                     :items="envasesUnicos"
@@ -201,6 +213,26 @@ function toggleFilters() {
                     density="compact"
                     prepend-icon="mdi-package-variant"
                   ></v-select>
+                </v-col>
+                <v-col cols="12" md="3">
+                  <v-select
+                    v-model="selectedCapacidad"
+                    :items="capacidadesUnicas"
+                    label="Filtrar por capacidad"
+                    clearable
+                    variant="outlined"
+                    density="compact"
+                    prepend-icon="mdi-cup-water"
+                    item-title="value"
+                    item-value="value"
+                  >
+                    <template v-slot:item="{ props, item }">
+                      <v-list-item v-bind="props" :title="`${item.raw}L`"></v-list-item>
+                    </template>
+                    <template v-slot:selection="{ item }">
+                      {{ item.raw }}L
+                    </template>
+                  </v-select>
                 </v-col>
               </v-row>
             </v-card>
@@ -216,71 +248,83 @@ function toggleFilters() {
           no-data-text="No hay productos que coincidan con los filtros"
           height="450px"
           fixed-header
-          class="elevation-1"
-          items-per-page="10"
-          :items-per-page-options="[10, 25, 50, 100]"
+          class="elevation-1 clickable-table"
+          :items-per-page="-1"
+          :items-per-page-options="[10, 25, 50, 100, -1]"
         >
-          <template v-slot:item.foto="{ item }">
-            <v-avatar size="50" class="ma-1" rounded="lg">
-              <v-img
-                v-if="item.foto"
-                :src="item.foto"
-                :alt="item.nombre"
-                cover
-                class="product-image"
-              ></v-img>
-              <v-icon v-else color="grey-lighten-1" size="30">mdi-package-variant</v-icon>
-            </v-avatar>
-          </template>
-          
-          <template v-slot:item.codigo="{ item }">
-            <div class="text-body-2 font-weight-medium">
-              {{ item.codigo }}
-            </div>
-          </template>
-          
-          <template v-slot:item.nombre="{ item }">
-            <div class="product-name">
-              <div class="text-body-1 font-weight-medium">{{ item.nombre }}</div>
-              <div v-if="item.descripcion" class="text-caption text-grey-darken-1 mt-1">
-                {{ item.descripcion }}
-              </div>
-            </div>
-          </template>
-          
-          <template v-slot:item.marca="{ item }">
-            <v-chip
-              v-if="item.marca"
-              size="small"
-              color="primary"
-              variant="outlined"
-            >
-              {{ item.marca }}
-            </v-chip>
-          </template>
-          
-          <template v-slot:item.precio="{ item }">
-            <div class="text-body-1 font-weight-bold text-success">
-              {{ formatCurrency(item.precio) }}
-            </div>
-          </template>
-          
-          <template v-slot:item.envase="{ item }">
-            <div class="text-body-2">
-              {{ item.envase }}{{ item.litros ? ` (${item.litros}L)` : '' }}
-            </div>
-          </template>
-          
-          <template v-slot:item.actions="{ item }">
-            <v-btn
-              color="primary"
-              size="small"
-              variant="elevated"
-              @click="selectProduct(item)"
-              prepend-icon="mdi-check"
-            >
-              Seleccionar
-            </v-btn>
+          <template v-slot:item="{ item }">
+            <tr class="clickable-row" @click="selectProduct(item)">
+              <td>
+                <v-avatar size="50" class="ma-1" rounded="lg">
+                  <v-img
+                    v-if="item.foto"
+                    :src="item.foto"
+                    :alt="item.nombre"
+                    cover
+                    class="product-image"
+                  ></v-img>
+                  <v-icon v-else color="grey-lighten-1" size="30">mdi-package-variant</v-icon>
+                </v-avatar>
+              </td>
+              <td>
+                <div class="text-body-2 font-weight-medium">
+                  {{ item.codigo }}
+                </div>
+              </td>
+              <td>
+                <div class="product-name">
+                  <div class="text-body-1 font-weight-medium">{{ item.nombre }}</div>
+                  <div v-if="item.descripcion" class="text-caption text-grey-darken-1 mt-1">
+                    {{ item.descripcion }}
+                  </div>
+                </div>
+              </td>
+              <td>
+                <v-chip
+                  v-if="item.marca"
+                  size="small"
+                  color="primary"
+                  variant="outlined"
+                >
+                  {{ item.marca }}
+                </v-chip>
+              </td>
+              <td>
+                <div class="text-body-1 font-weight-bold" :class="item.en_oferta ? 'text-error' : 'text-success'">
+                  {{ item.en_oferta && item.precio_oferta ? formatCurrency(item.precio_oferta) : formatCurrency(item.precioBase || item.precio) }}
+                </div>
+                <div v-if="item.en_oferta && item.precio_oferta" class="text-caption text-grey text-decoration-line-through">
+                  {{ formatCurrency(item.precioBase || item.precio) }}
+                </div>
+              </td>
+              <td>
+                <v-chip
+                  v-if="item.tipo_envase"
+                  size="small"
+                  color="secondary"
+                  variant="outlined"
+                >
+                  {{ item.tipo_envase }}
+                </v-chip>
+                <span v-else class="text-grey">-</span>
+              </td>
+              <td>
+                <div class="text-body-2 font-weight-medium">
+                  {{ item.litros ? `${item.litros}L` : '-' }}
+                </div>
+              </td>
+              <td>
+                <v-btn
+                  color="primary"
+                  size="small"
+                  variant="elevated"
+                  @click.stop="selectProduct(item)"
+                  prepend-icon="mdi-check"
+                >
+                  Seleccionar
+                </v-btn>
+              </td>
+            </tr>
           </template>
         </v-data-table>
       </v-card-text>
@@ -350,5 +394,23 @@ function toggleFilters() {
 
 .text-success {
   color: #4caf50 !important;
+}
+
+/* Estilos para filas clickeables */
+.clickable-row {
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.clickable-row:hover {
+  background-color: rgba(25, 118, 210, 0.08) !important;
+}
+
+.clickable-table :deep(.v-data-table__wrapper tbody tr) {
+  cursor: pointer;
+}
+
+.clickable-table :deep(.v-data-table__wrapper tbody tr:hover) {
+  background-color: rgba(25, 118, 210, 0.08) !important;
 }
 </style>

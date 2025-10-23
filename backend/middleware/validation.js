@@ -37,7 +37,7 @@ const validateProducto = async (req, res, next) => {
       });
     }
     
-    const query = 'SELECT id, nombre FROM productos WHERE id = ?';
+    const query = 'SELECT id, nombre FROM productos WHERE id = ? AND stockActual > 0';
     const results = await executeQuery(query, [productoId]);
     
     if (results.length === 0) {

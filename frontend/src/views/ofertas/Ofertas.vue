@@ -13,8 +13,8 @@ const headers = [
   { title: 'Imagen', key: 'foto', sortable: false, width: '80px' },
   { title: 'Título', key: 'titulo', sortable: true, width: '200px' },
   { title: 'Producto', key: 'producto_nombre', sortable: true, width: '180px' },
-  { title: 'Descripción', key: 'descripcion', sortable: false, width: '250px' },
-  { title: 'Descuento %', key: 'descuento_porcentaje', sortable: true, width: '120px', align: 'center' },
+  { title: 'Precio Original', key: 'precio_original', sortable: true, width: '120px', align: 'center' },
+  { title: 'Precio Oferta', key: 'precio_oferta', sortable: true, width: '120px', align: 'center' },
   { title: 'Fecha Fin', key: 'fecha_fin', sortable: true, width: '120px', align: 'center' }
 ]
 
@@ -118,22 +118,21 @@ function openImageModal(oferta) {
           </div>
         </template>
         
-        <template v-slot:item.descripcion="{ item }">
-          <div class="text-truncate text-body-2" style="max-width: 250px;" :title="item.descripcion">
-            {{ item.descripcion }}
+        <template v-slot:item.precio_original="{ item }">
+          <div class="text-center font-weight-medium">
+            <span class="text-decoration-line-through text-grey-darken-1">
+              ${{ (item.precio_original || 0).toLocaleString('es-ES', { minimumFractionDigits: 2 }) }}
+            </span>
           </div>
         </template>
         
-        <template v-slot:item.descuento_porcentaje="{ item }">
-          <v-chip
-            color="success"
-            variant="tonal"
-            size="small"
-            class="font-weight-bold"
-          >
-            {{ item.descuento_porcentaje }}%
-          </v-chip>
+        <template v-slot:item.precio_oferta="{ item }">
+          <div class="text-center font-weight-bold text-success">
+            ${{ (item.precio_oferta || 0).toLocaleString('es-ES', { minimumFractionDigits: 2 }) }}
+          </div>
         </template>
+        
+
         
         <template v-slot:item.fecha_fin="{ item }">
           <div class="text-center">

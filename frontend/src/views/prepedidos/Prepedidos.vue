@@ -51,6 +51,39 @@ async function viewPrepedido(prepedido) {
     // Cargar detalles completos del prepedido
     const response = await api.get(`/prepedidos/${prepedido.id}`)
     selectedPrepedido.value = response.data.data || response.data
+    
+    // DEBUG: Verificar valores de ofertaid - LOGS MÁS VISIBLES
+    console.log('🟢🟢🟢 PREPEDIDOS DEBUG - INICIO 🟢🟢🟢')
+    console.log('📋 Prepedido ID:', selectedPrepedido.value.id)
+    console.log('📋 Total items:', selectedPrepedido.value.items?.length || 0)
+    
+    if (selectedPrepedido.value.items) {
+      console.log('📦 ANÁLISIS DE ITEMS:')
+      selectedPrepedido.value.items.forEach((item, index) => {
+        const hasOffer = !!item.ofertaid
+        console.log(`📦 Item ${index + 1}:`, {
+          id: item.id,
+          descripcion: item.descripcion,
+          ofertaid: item.ofertaid,
+          hasOfertaid: hasOffer,
+          status: hasOffer ? '🎯 TIENE OFERTA' : '⚪ SIN OFERTA'
+        })
+      })
+      
+      const itemsConOferta = selectedPrepedido.value.items.filter(item => !!item.ofertaid)
+      console.log(`🎯 RESUMEN: ${itemsConOferta.length} items con oferta de ${selectedPrepedido.value.items.length} totales`)
+      
+      if (itemsConOferta.length > 0) {
+        console.log('🎯 Items con oferta encontrados:', itemsConOferta.map(item => ({
+          id: item.id,
+          descripcion: item.descripcion,
+          ofertaid: item.ofertaid
+        })))
+      }
+    } else {
+      console.log('❌ No hay items en el prepedido')
+    }
+    console.log('🟢🟢🟢 PREPEDIDOS DEBUG - FIN 🟢🟢🟢')
   } catch (err) {
     console.error('Error al cargar detalles del prepedido:', err)
     selectedPrepedido.value = prepedido // Fallback a los datos básicos
@@ -228,7 +261,25 @@ function getStatusColor(estado) {
             no-data-text="No hay productos en este prepedido"
             density="compact"
             hide-default-footer
+            :row-props="({ item }) => ({
+              class: item.ofertaid ? 'bg-green-lighten-3' : ''
+            })"
           >
+            <template v-slot:item.descripcion="{ item }">
+              <div class="d-flex align-center">
+                <span>{{ item.descripcion }}</span>
+                <v-chip 
+                  v-if="item.ofertaid" 
+                  color="success" 
+                  size="x-small" 
+                  variant="elevated"
+                  class="ml-2"
+                >
+                  🎯 OFERTA
+                </v-chip>
+              </div>
+            </template>
+            
             <template v-slot:item.cantidad="{ item }">
               <span class="text-right">{{ item.cantidad }}</span>
             </template>

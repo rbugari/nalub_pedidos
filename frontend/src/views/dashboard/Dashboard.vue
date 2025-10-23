@@ -143,7 +143,7 @@ onMounted(async () => {
             <!-- Imagen del producto como header -->
             <div class="product-image-container">
               <v-img
-                :src="oferta.producto_foto || oferta.imagen_url || 'https://via.placeholder.com/120x120'"
+                :src="oferta.producto_foto || 'https://via.placeholder.com/120x120'"
                 contain
                 class="product-image"
                 style="cursor: pointer;"
@@ -153,9 +153,9 @@ onMounted(async () => {
                   color="error"
                   class="discount-chip"
                   size="x-small"
-                  v-if="oferta.descuento_porcentaje"
+                  v-if="oferta.precio_original > 0 && oferta.precio_oferta > 0 && oferta.precio_original > oferta.precio_oferta"
                 >
-                  -{{ oferta.descuento_porcentaje }}%
+                  -{{ Math.round(((oferta.precio_original - oferta.precio_oferta) / oferta.precio_original) * 100) }}%
                 </v-chip>
               </v-img>
             </div>
@@ -168,9 +168,9 @@ onMounted(async () => {
               
               <!-- Precios -->
               <div class="product-footer">
-                <div class="price-container" v-if="oferta.producto_precio">
-                  <span class="original-price">{{ formatCurrency(oferta.producto_precio) }}</span>
-                  <span class="discounted-price">{{ formatCurrency(oferta.producto_precio * (1 - oferta.descuento_porcentaje / 100)) }}</span>
+                <div class="price-container" v-if="oferta.precio_original && oferta.precio_oferta">
+                  <span class="original-price">{{ formatCurrency(oferta.precio_original) }}</span>
+                  <span class="discounted-price">{{ formatCurrency(oferta.precio_oferta) }}</span>
                 </div>
               </div>
             </div>

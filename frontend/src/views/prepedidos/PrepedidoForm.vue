@@ -87,6 +87,12 @@ const productHeaders = [
   }
 ]
 
+// Computed property para calcular el total automáticamente
+const totalCalculado = computed(() => {
+  if (!selectedProductForForm.value || !newItem.value.cantidad) return 0
+  return newItem.value.cantidad * newItem.value.precioEstimado
+})
+
 // Cargar productos al montar el componente
 onMounted(async () => {
   // Si está en modo edición, cargar datos del prepedido
@@ -100,18 +106,25 @@ function onProductSelected(producto) {
   selectedProductForForm.value = producto
   newItem.value.productoId = producto.id
   newItem.value.descripcion = producto.nombre
-  newItem.value.precioEstimado = parseFloat(producto.precio || 0)
+  newItem.value.precioEstimado = parseFloat(producto.precioBase || producto.precio || 0)
   newItem.value.unidad = producto.envase || 'envase' // usar envase del producto
   productSelectorDialog.value = false
 }
 
 // Manejar selección de oferta
 function onOfertaSelected(productoConOferta) {
+  console.log('🎯 OFERTA SELECCIONADA:', productoConOferta) // Debug log
   selectedProductForForm.value = productoConOferta
   newItem.value.productoId = productoConOferta.id
   newItem.value.descripcion = `${productoConOferta.nombre} (${productoConOferta.descuento_texto})`
-  newItem.value.precioEstimado = parseFloat(productoConOferta.precio || 0)
+  newItem.value.precioEstimado = parseFloat(productoConOferta.precioBase || productoConOferta.precio || 0)
   newItem.value.unidad = productoConOferta.envase || 'envase'
+  
+  // ✅ CORREGIR: Usar 'oferta_id' que es el campo que realmente envía OfertaSelector
+  newItem.value.ofertaid = productoConOferta.oferta_id
+  console.log('🎯 OFERTAID CAPTURADO (CORREGIDO):', newItem.value.ofertaid) // Debug log
+  console.log('🔍 OBJETO COMPLETO RECIBIDO:', JSON.stringify(productoConOferta, null, 2)) // Debug completo
+  
   ofertaSelectorDialog.value = false
   addItemDialog.value = true // Abrir el diálogo para configurar cantidad
 }
@@ -122,6 +135,10 @@ async function loadPrepedido() {
     const response = await api.get(`/prepedidos/${prepedidoId.value}`)
     const prepedido = response.data.data
     
+    // 🔍 DEBUG: Verificar datos recibidos del backend
+    console.log('🔍 PREPEDIDO CARGADO PARA EDICIÓN:', JSON.stringify(prepedido, null, 2))
+    console.log('🎯 ITEMS CON OFERTAID:', prepedido.items.filter(item => !!item.ofertaid))
+    
     // Cargar datos en el formulario
     form.value.observaciones = prepedido.observaciones || ''
     form.value.items = prepedido.items.map(item => ({
@@ -130,8 +147,13 @@ async function loadPrepedido() {
       cantidad: item.cantidad,
       unidad: item.unidad,
       precioEstimado: item.precio_estimado,
-      observaciones: item.observaciones || ''
+      observaciones: item.observaciones || '',
+      ofertaid: item.ofertaid || null  // ✅ AGREGAR OFERTAID AL MAPEO
     }))
+    
+    // 🔍 DEBUG: Verificar items mapeados
+    console.log('🔍 ITEMS MAPEADOS PARA FORMULARIO:', JSON.stringify(form.value.items, null, 2))
+    console.log('🎯 ITEMS CON OFERTAID EN FORMULARIO:', form.value.items.filter(item => !!item.ofertaid))
     
   } catch (err) {
     console.error('Error cargando prepedido:', err)
@@ -152,7 +174,18 @@ function addItem() {
     return
   }
 
-  form.value.items.push({ ...newItem.value })
+  // 🔍 DEBUG: Verificar newItem antes de agregar
+  console.log('🔍 ANTES DE AGREGAR - newItem completo:', JSON.stringify(newItem.value, null, 2))
+  console.log('🎯 OFERTAID en newItem:', newItem.value.ofertaid)
+  
+  const itemToAdd = { ...newItem.value }
+  console.log('🔍 ITEM A AGREGAR:', JSON.stringify(itemToAdd, null, 2))
+  console.log('🎯 OFERTAID en itemToAdd:', itemToAdd.ofertaid)
+  
+  form.value.items.push(itemToAdd)
+  
+  console.log('🔍 ITEMS DESPUÉS DE AGREGAR:', JSON.stringify(form.value.items, null, 2))
+  console.log('🎯 ÚLTIMO ITEM AGREGADO:', JSON.stringify(form.value.items[form.value.items.length - 1], null, 2))
   
   // Limpiar formulario
   resetNewItem()
@@ -173,7 +206,8 @@ function resetNewItem() {
     cantidad: 1,
     unidad: 'envase',
     precioEstimado: 0,
-    observaciones: ''
+    observaciones: '',
+    ofertaid: null  // ✅ AGREGAR OFERTAID AL RESET
   }
   selectedProductForForm.value = null
 }
@@ -192,6 +226,10 @@ async function submitPrepedido() {
       observaciones: form.value.observaciones,
       items: form.value.items
     }
+    
+    // 🔍 DEBUG: Verificar payload antes de enviar
+    console.log('🚀 PAYLOAD COMPLETO A ENVIAR:', JSON.stringify(data, null, 2))
+    console.log('🎯 ITEMS CON OFERTAID:', data.items.filter(item => item.ofertaid))
     
     let response
     if (isEditing.value) {
@@ -305,6 +343,16 @@ export default {
               <div class="d-flex align-center">
                 <v-icon class="mr-2" size="small">mdi-package-variant</v-icon>
                 <span>{{ item.descripcion }}</span>
+                <!-- Indicador visual de oferta -->
+                <v-chip 
+                  v-if="item.ofertaid" 
+                  color="success" 
+                  size="x-small" 
+                  class="ml-2"
+                  variant="elevated"
+                >
+                  🎯 OFERTA
+                </v-chip>
               </div>
             </template>
             
@@ -363,54 +411,72 @@ export default {
     </v-form>
 
     <!-- Dialog para agregar producto -->
-    <v-dialog v-model="addItemDialog" max-width="600px">
+    <v-dialog v-model="addItemDialog" max-width="700px">
       <v-card>
         <v-card-title>Agregar Producto</v-card-title>
         <v-card-text>
           <v-form @submit.prevent="addItem">
-            <!-- Mostrar producto seleccionado -->
-            <div v-if="selectedProductForForm" class="mb-3">
-              <v-text-field
-                :model-value="selectedProductForForm ? `${selectedProductForForm.codigo} - ${selectedProductForForm.nombre}` : ''"
-                label="Producto seleccionado"
-                variant="outlined"
-                readonly
-                append-inner-icon="mdi-package-variant"
-              ></v-text-field>
-            </div>
-            
-            <!-- Campos en una sola línea más compacta -->
-            <v-row class="align-center">
-              <v-col cols="4">
-                <v-number-input
-                  v-model="newItem.cantidad"
-                  label="Cantidad"
-                  variant="outlined"
-                  :min="1"
-                  required
-                  density="compact"
-                ></v-number-input>
-              </v-col>
-              <v-col cols="4">
-                <v-text-field
-                  v-model="newItem.unidad"
-                  label="Envase"
-                  variant="outlined"
-                  placeholder="ej: envase, kg, litros"
-                  density="compact"
-                  readonly
-                ></v-text-field>
-              </v-col>
-              <v-col cols="4">
-                <v-text-field
-                  :model-value="formatCurrency(newItem.precioEstimado)"
-                  label="Precio ($)"
-                  variant="outlined"
-                  readonly
-                  density="compact"
-                ></v-text-field>
-              </v-col>
-            </v-row>
+            <!-- SECCIÓN 1: Información del Producto (Solo lectura) -->
+            <v-card 
+              v-if="selectedProductForForm" 
+              class="mb-4 pa-4" 
+              color="grey-lighten-4" 
+              variant="outlined"
+            >
+              <v-card-title class="text-h6 pb-2">Información del Producto</v-card-title>
+              <v-row dense>
+                <v-col cols="12">
+                  <div class="text-body-1">
+                    <strong>{{ selectedProductForForm.codigo }}</strong> - {{ selectedProductForForm.nombre }}
+                  </div>
+                </v-col>
+                <v-col cols="6">
+                  <div class="text-body-2 text-grey-darken-4">
+                    <strong>Tipo:</strong> {{ selectedProductForForm.tipo_envase || 'N/A' }}
+                  </div>
+                </v-col>
+                <v-col cols="6">
+                  <div class="text-body-2 text-grey-darken-4">
+                    <strong>Capacidad:</strong> {{ selectedProductForForm.litros ? `${selectedProductForForm.litros}L` : 'N/A' }}
+                  </div>
+                </v-col>
+                <v-col cols="12">
+                  <div class="text-h6 text-primary">
+                    <strong>Precio unitario:</strong> {{ formatCurrency(newItem.precioEstimado) }}
+                  </div>
+                </v-col>
+              </v-row>
+            </v-card>
+
+            <v-divider class="my-4"></v-divider>
+
+            <!-- SECCIÓN 2: Campos Editables -->
+            <v-card class="pa-4" variant="outlined">
+              <v-card-title class="text-h6 pb-2">Campos Editables</v-card-title>
+              <v-row class="align-center">
+                <v-col cols="6">
+                  <v-number-input
+                    v-model="newItem.cantidad"
+                    label="Cantidad"
+                    variant="outlined"
+                    :min="1"
+                    required
+                    density="comfortable"
+                  ></v-number-input>
+                </v-col>
+                <v-col cols="6">
+                  <v-text-field
+                    :model-value="formatCurrency(totalCalculado)"
+                    label="Total"
+                    variant="outlined"
+                    readonly
+                    density="comfortable"
+                    class="text-h6"
+                    color="success"
+                  ></v-text-field>
+                </v-col>
+              </v-row>
+            </v-card>
           </v-form>
         </v-card-text>
         <v-card-actions>
@@ -419,7 +485,7 @@ export default {
           <v-btn 
             color="primary" 
             @click="addItem"
-            :disabled="!selectedProductForForm"
+            :disabled="!selectedProductForForm || !newItem.cantidad"
           >
             Agregar
           </v-btn>

@@ -49,6 +49,7 @@ app.use(express.urlencoded({ extended: true }));
 // Request logging middleware
 app.use((req, res, next) => {
     console.log(`🔍 REQUEST: ${req.method} ${req.originalUrl}`);
+    console.log(`🔍 REQUEST HEADERS:`, req.headers);
     next();
 });
 

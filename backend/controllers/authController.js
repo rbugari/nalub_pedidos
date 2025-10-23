@@ -85,11 +85,38 @@ const login = async (req, res) => {
 
 // Cambiar contraseña
 const changePassword = async (req, res) => {
+  console.log('=== INICIO changePassword ===');
+  console.log('req.body:', req.body);
+  console.log('req.user:', req.user);
+  
   try {
     const { currentPassword, newPassword } = req.body;
+    console.log('Parámetros extraídos - currentPassword:', currentPassword ? '[PRESENTE]' : '[AUSENTE]', 'newPassword:', newPassword ? '[PRESENTE]' : '[AUSENTE]');
+    
+    // Verificar que req.user existe y tiene id
+    if (!req.user) {
+      console.error('❌ ERROR CRÍTICO: req.user es undefined en changePassword');
+      return res.status(401).json({
+        success: false,
+        message: 'Usuario no autenticado'
+      });
+    }
+    
     const userId = req.user.id;
+    console.log('userId extraído:', userId);
+    
+    // Validación robusta del userId
+    if (!userId || typeof userId !== 'number' || userId <= 0) {
+      console.error('❌ ERROR CRÍTICO: userId inválido en changePassword:', userId);
+      console.error('❌ Tipo de userId:', typeof userId);
+      return res.status(401).json({
+        success: false,
+        message: 'ID de usuario no válido'
+      });
+    }
     
     if (!currentPassword || !newPassword) {
+      console.log('ERROR: Faltan parámetros requeridos');
       return res.status(400).json({
         success: false,
         message: 'Contraseña actual y nueva son requeridas'
@@ -97,6 +124,7 @@ const changePassword = async (req, res) => {
     }
     
     if (newPassword.length < 6) {
+      console.log('ERROR: Nueva contraseña muy corta');
       return res.status(400).json({
         success: false,
         message: 'La nueva contraseña debe tener al menos 6 caracteres'
@@ -104,40 +132,57 @@ const changePassword = async (req, res) => {
     }
     
     // Obtener contraseña actual
-    const query = 'SELECT password FROM clientes WHERE id = ?';
+    console.log('Ejecutando query SELECT...');
+    const query = 'SELECT pwd FROM clientes WHERE id = ?';
+    console.log('Query:', query, 'Parámetros:', [userId]);
+    
     const users = await executeQuery(query, [userId]);
+    console.log('Resultado query SELECT:', users);
     
     if (users.length === 0) {
+      console.error('❌ ERROR CRÍTICO: Usuario no encontrado en BD para changePassword');
+      console.error('❌ userId buscado:', userId);
+      console.error('❌ Esto indica un problema de sincronización entre token JWT y BD');
       return res.status(404).json({
         success: false,
         message: 'Usuario no encontrado'
       });
     }
     
-    // Verificar contraseña actual
-    const isValidPassword = await bcrypt.compare(currentPassword, users[0].password);
+    console.log('Usuario encontrado, pwd en BD:', users[0].pwd ? '[PRESENTE]' : '[AUSENTE]');
     
-    if (!isValidPassword) {
+    // Verificar contraseña actual (comparación directa, sin bcrypt para mantener consistencia con login)
+    if (currentPassword !== users[0].pwd) {
+      console.log('ERROR: Contraseña actual incorrecta');
       return res.status(401).json({
         success: false,
         message: 'Contraseña actual incorrecta'
       });
     }
     
-    // Encriptar nueva contraseña
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    console.log('Contraseña actual verificada correctamente');
     
-    // Actualizar contraseña
-    const updateQuery = 'UPDATE clientes SET password = ? WHERE id = ?';
-    await executeQuery(updateQuery, [hashedPassword, userId]);
+    // Actualizar contraseña (sin encriptar para mantener consistencia con login)
+    console.log('Ejecutando query UPDATE...');
+    const updateQuery = 'UPDATE clientes SET pwd = ? WHERE id = ?';
+    console.log('Query UPDATE:', updateQuery, 'Parámetros:', [newPassword ? '[PRESENTE]' : '[AUSENTE]', userId]);
     
+    const updateResult = await executeQuery(updateQuery, [newPassword, userId]);
+    console.log('Resultado query UPDATE:', updateResult);
+    
+    console.log('Contraseña actualizada exitosamente');
     res.json({
       success: true,
       message: 'Contraseña actualizada exitosamente'
     });
     
   } catch (error) {
-    console.error('Error cambiando contraseña:', error);
+    console.error('=== ERROR EN changePassword ===');
+    console.error('Error completo:', error);
+    console.error('Stack trace:', error.stack);
+    console.error('Mensaje:', error.message);
+    console.error('=== FIN ERROR ===');
+    
     res.status(500).json({
       success: false,
       message: 'Error interno del servidor'

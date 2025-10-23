@@ -9,9 +9,9 @@ const getOfertas = async (req, res) => {
     
     const query = `
       SELECT 
-        id, titulo, descripcion, fecha_inicio, fecha_fin,
-        descuento_porcentaje, descuento_monto, id_producto,
-        imagen_url, activa, created_at
+        id, titulo, fecha_inicio, fecha_fin,
+        precio_original, precio_oferta, id_producto,
+        activa, created_at
       FROM ofertas 
       ORDER BY created_at DESC
       LIMIT ? OFFSET ?
@@ -24,10 +24,12 @@ const getOfertas = async (req, res) => {
       executeQuery(countQuery)
     ]);
     
-    // Formatear ofertas con el nuevo campo id_producto
+    // Formatear ofertas con precios directos
     const ofertasFormateadas = ofertas.map(oferta => ({
       ...oferta,
-      id_producto: oferta.id_producto || null
+      id_producto: oferta.id_producto || null,
+      precio_original: oferta.precio_original || 0,
+      precio_oferta: oferta.precio_oferta || 0
     }));
     
     res.json({
@@ -52,8 +54,8 @@ const getOfertasVigentesMes = async (req, res) => {
   try {
     const query = `
       SELECT 
-        o.id, o.titulo, o.descripcion, o.fecha_inicio, o.fecha_fin,
-        o.descuento_porcentaje, o.descuento_monto, o.imagen_url, o.id_producto,
+        o.id, o.titulo, o.fecha_inicio, o.fecha_fin,
+        o.precio_original, o.precio_oferta, o.id_producto,
         o.created_at,
         p.id as producto_id,
         p.codigo as producto_codigo,
@@ -75,21 +77,14 @@ const getOfertasVigentesMes = async (req, res) => {
         AND o.fecha_fin >= CURDATE()
         AND MONTH(o.fecha_inicio) = MONTH(CURDATE())
         AND YEAR(o.fecha_inicio) = YEAR(CURDATE())
+        AND (p.id IS NULL OR p.stockActual > 0)
       ORDER BY o.created_at DESC
     `;
     
     const ofertas = await executeQuery(query);
     
-    // Formatear ofertas con todos los campos del producto
+    // Formatear ofertas con precios directos
     const ofertasFormateadas = ofertas.map(oferta => {
-      // Calcular precio con descuento
-      let precioOferta = oferta.producto_precio || 0;
-      if (oferta.descuento_porcentaje) {
-        precioOferta = precioOferta * (1 - oferta.descuento_porcentaje / 100);
-      } else if (oferta.descuento_monto) {
-        precioOferta = Math.max(0, precioOferta - oferta.descuento_monto);
-      }
-      
       return {
         ...oferta,
         id_producto: oferta.id_producto || null,
@@ -97,7 +92,8 @@ const getOfertasVigentesMes = async (req, res) => {
         producto_codigo: oferta.producto_codigo || '',
         producto_nombre: oferta.producto_nombre || '',
         producto_precio: oferta.producto_precio || 0,
-        producto_precio_oferta: Math.round(precioOferta * 100) / 100,
+        producto_precio_original: oferta.precio_original || 0,
+        producto_precio_oferta: oferta.precio_oferta || 0,
         producto_marca: oferta.producto_marca || '',
         producto_envase: oferta.producto_envase || '',
         producto_litros: oferta.producto_litros || 0,
@@ -132,9 +128,9 @@ const getOferta = async (req, res) => {
     
     const query = `
       SELECT 
-        id, titulo, descripcion, fecha_inicio, fecha_fin,
-        descuento_porcentaje, descuento_monto, id_producto,
-        imagen_url, created_at
+        id, titulo, fecha_inicio, fecha_fin,
+        precio_original, precio_oferta, id_producto,
+        created_at
       FROM ofertas 
       WHERE id = ? AND activa = 1
     `;
@@ -150,8 +146,10 @@ const getOferta = async (req, res) => {
     
     const oferta = ofertas[0];
     
-    // Formatear oferta con el nuevo campo id_producto
+    // Formatear oferta con precios directos
     oferta.id_producto = oferta.id_producto || null;
+    oferta.precio_original = oferta.precio_original || 0;
+    oferta.precio_oferta = oferta.precio_oferta || 0;
     
     res.json({
       success: true,
@@ -174,9 +172,9 @@ const getOfertasPorProducto = async (req, res) => {
     
     const query = `
       SELECT 
-        id, titulo, descripcion, fecha_inicio, fecha_fin,
-        descuento_porcentaje, descuento_monto, id_producto,
-        imagen_url, created_at
+        id, titulo, fecha_inicio, fecha_fin,
+        precio_original, precio_oferta, id_producto,
+        created_at
       FROM ofertas 
       WHERE activa = 1 
         AND fecha_inicio <= CURDATE() 
@@ -187,10 +185,12 @@ const getOfertasPorProducto = async (req, res) => {
     
     const ofertas = await executeQuery(query, [producto_id]);
     
-    // Formatear ofertas
+    // Formatear ofertas con precios directos
     const ofertasFormateadas = ofertas.map(oferta => ({
       ...oferta,
-      id_producto: oferta.id_producto || null
+      id_producto: oferta.id_producto || null,
+      precio_original: oferta.precio_original || 0,
+      precio_oferta: oferta.precio_oferta || 0
     }));
     
     res.json({
@@ -213,9 +213,9 @@ const getOfertasDestacadas = async (req, res) => {
   try {
     const query = `
       SELECT 
-        o.id, o.titulo, o.descripcion, o.fecha_inicio, o.fecha_fin,
-        o.descuento_porcentaje, o.descuento_monto, o.imagen_url, o.id_producto,
-        p.nombre as producto_nombre, p.precio as producto_precio, p.foto as producto_foto
+        o.id, o.titulo, o.fecha_inicio, o.fecha_fin,
+        o.precio_original, o.precio_oferta, o.id_producto,
+        p.nombre as producto_nombre, p.precioVenta as producto_precio, p.foto as producto_foto
       FROM ofertas o
       LEFT JOIN productos p ON o.id_producto = p.id
       WHERE o.activa = 1 
@@ -223,9 +223,11 @@ const getOfertasDestacadas = async (req, res) => {
         AND o.fecha_fin >= CURDATE()
         AND MONTH(o.fecha_inicio) = MONTH(CURDATE())
         AND YEAR(o.fecha_inicio) = YEAR(CURDATE())
+        AND (p.id IS NULL OR p.stockActual > 0)
       ORDER BY 
         CASE 
-          WHEN o.descuento_porcentaje IS NOT NULL THEN o.descuento_porcentaje 
+          WHEN o.precio_original > 0 AND o.precio_oferta > 0 
+          THEN ((o.precio_original - o.precio_oferta) / o.precio_original) * 100
           ELSE 0 
         END DESC,
         o.created_at DESC
@@ -234,9 +236,17 @@ const getOfertasDestacadas = async (req, res) => {
     
     const ofertas = await executeQuery(query);
     
+    // Formatear ofertas con precios directos
+    const ofertasFormateadas = ofertas.map(oferta => ({
+      ...oferta,
+      precio_original: oferta.precio_original || 0,
+      precio_oferta: oferta.precio_oferta || 0,
+      producto_precio: oferta.producto_precio || 0
+    }));
+    
     res.json({
       success: true,
-      data: ofertas
+      data: ofertasFormateadas
     });
     
   } catch (error) {

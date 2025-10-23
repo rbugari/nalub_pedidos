@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import api from '../../services/api'
 import { formatCurrency } from '../../utils/currency'
 
@@ -11,14 +11,50 @@ const imageDialog = ref(false)
 const selectedImage = ref(null)
 const selectedProductName = ref('')
 
-const headers = [
-  { title: 'Imagen', key: 'foto', sortable: false, width: '80px' },
-  { title: 'Código', key: 'codigo', sortable: true },
-  { title: 'Nombre', key: 'nombre', sortable: true },
-  { title: 'Marca', key: 'marca', sortable: true },
-  { title: 'Envase', key: 'envase', sortable: true },
-  { title: 'Precio', key: 'precio', sortable: true, align: 'end' }
-]
+const headers = computed(() => {
+  const baseHeaders = [
+    { title: 'Imagen', key: 'foto', sortable: false, width: '80px' },
+    { title: 'Código', key: 'codigo', sortable: true },
+    { title: 'Nombre', key: 'nombre', sortable: true },
+    { title: 'Marca', key: 'marca', sortable: true },
+    { title: 'Envase', key: 'envase', sortable: true },
+    { title: 'Precio Base', key: 'precioBase', sortable: true, align: 'end' }
+  ]
+  
+  // Si hay productos, obtener los porcentajes del primer producto para los headers
+  if (productos.value.length > 0) {
+    const firstProduct = productos.value[0]
+    baseHeaders.push(
+      { 
+        title: `Precio 1${firstProduct.porcentaje1 && firstProduct.porcentaje1 > 0 ? ` (${firstProduct.porcentaje1}%)` : ''}`, 
+        key: 'precio1', 
+        sortable: true, 
+        align: 'end' 
+      },
+      { 
+        title: `Precio 2${firstProduct.porcentaje2 && firstProduct.porcentaje2 > 0 ? ` (${firstProduct.porcentaje2}%)` : ''}`, 
+        key: 'precio2', 
+        sortable: true, 
+        align: 'end' 
+      },
+      { 
+        title: `Precio 3${firstProduct.porcentaje3 && firstProduct.porcentaje3 > 0 ? ` (${firstProduct.porcentaje3}%)` : ''}`, 
+        key: 'precio3', 
+        sortable: true, 
+        align: 'end' 
+      }
+    )
+  } else {
+    // Headers por defecto cuando no hay productos
+    baseHeaders.push(
+      { title: 'Precio 1', key: 'precio1', sortable: true, align: 'end' },
+      { title: 'Precio 2', key: 'precio2', sortable: true, align: 'end' },
+      { title: 'Precio 3', key: 'precio3', sortable: true, align: 'end' }
+    )
+  }
+  
+  return baseHeaders
+})
 
 onMounted(async () => {
   await loadProductos()
@@ -58,7 +94,8 @@ function openImageModal(producto) {
     <v-alert v-if="error" type="error" class="mb-4">{{ error }}</v-alert>
 
     <v-card>
-      <v-card-title>
+      <!-- Input de búsqueda fijo -->
+      <v-card-title class="sticky-search-header">
         <v-text-field
           v-model="search"
           append-icon="mdi-magnify"
@@ -69,14 +106,20 @@ function openImageModal(producto) {
         ></v-text-field>
       </v-card-title>
       
-      <v-data-table
-        :headers="headers"
-        :items="productos"
-        :loading="loading"
-        :search="search"
-        loading-text="Cargando productos..."
-        no-data-text="No hay productos disponibles"
-      >
+      <!-- Contenedor con scroll para la tabla -->
+      <div class="table-container">
+        <v-data-table
+          :headers="headers"
+          :items="productos"
+          :loading="loading"
+          :search="search"
+          loading-text="Cargando productos..."
+          no-data-text="No hay productos disponibles"
+          class="sticky-header-table"
+          :height="600"
+          fixed-header
+          :items-per-page="-1"
+        >
         <template v-slot:item.foto="{ item }">
           <v-avatar size="50" class="ma-1" rounded="lg" style="cursor: pointer;" @click="openImageModal(item)">
             <v-img
@@ -90,9 +133,27 @@ function openImageModal(producto) {
           </v-avatar>
         </template>
         
-        <template v-slot:item.precio="{ item }">
+        <template v-slot:item.precioBase="{ item }">
+          <div class="text-body-1 font-weight-bold text-primary text-right">
+            {{ formatCurrency(item.precioBase) }}
+          </div>
+        </template>
+        
+        <template v-slot:item.precio1="{ item }">
           <div class="text-body-1 font-weight-bold text-success text-right">
-            {{ formatCurrency(item.precio) }}
+            {{ formatCurrency(item.precio1) }}
+          </div>
+        </template>
+        
+        <template v-slot:item.precio2="{ item }">
+          <div class="text-body-1 font-weight-bold text-warning text-right">
+            {{ formatCurrency(item.precio2) }}
+          </div>
+        </template>
+        
+        <template v-slot:item.precio3="{ item }">
+          <div class="text-body-1 font-weight-bold text-error text-right">
+            {{ formatCurrency(item.precio3) }}
           </div>
         </template>
         
@@ -100,18 +161,17 @@ function openImageModal(producto) {
           {{ item.envase }} ({{ item.litros }}L)
         </template>
       </v-data-table>
+      </div>
     </v-card>
 
-    <!-- Modal para mostrar imagen del producto -->
-    <v-dialog v-model="imageDialog" max-width="600px">
+    <!-- Modal para mostrar imagen ampliada -->
+    <v-dialog v-model="imageDialog" max-width="600">
       <v-card>
         <v-card-title class="d-flex justify-space-between align-center">
-          <span>{{ selectedProductName }}</span>
-          <v-btn
-            icon="mdi-close"
-            variant="text"
-            @click="imageDialog = false"
-          ></v-btn>
+          <span class="text-h6">{{ selectedProductName }}</span>
+          <v-btn icon @click="imageDialog = false">
+            <v-icon>mdi-close</v-icon>
+          </v-btn>
         </v-card-title>
         <v-card-text class="pa-0">
           <v-img
@@ -143,5 +203,32 @@ function openImageModal(producto) {
 
 .v-data-table :deep(tr:hover) {
   background-color: rgba(25, 118, 210, 0.04);
+}
+
+/* Estilos para header fijo */
+.sticky-search-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background-color: white;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.table-container {
+  position: relative;
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+.sticky-header-table :deep(.v-data-table__wrapper) {
+  overflow-y: auto;
+}
+
+.sticky-header-table :deep(thead th) {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background-color: #f5f5f5;
+  border-bottom: 2px solid #e0e0e0;
 }
 </style>
