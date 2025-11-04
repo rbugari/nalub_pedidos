@@ -38,7 +38,7 @@ const getProductos = async (req, res) => {
       FROM productos p
       LEFT JOIN marcas m ON p.marca = m.id
       LEFT JOIN envases e ON p.envase = e.id
-      LEFT JOIN tipoenvase te ON e.tipoenvaseid = te.id
+      LEFT JOIN tipoEnvase te ON e.tipoenvaseid = te.id
       LEFT JOIN ofertas o ON p.id = o.id_producto 
         AND o.activa = 1 
         AND o.fecha_inicio <= CURDATE() 
@@ -136,7 +136,7 @@ const searchProductos = async (req, res) => {
       FROM productos p
       LEFT JOIN marcas m ON p.marca = m.id
       LEFT JOIN envases e ON p.envase = e.id
-      LEFT JOIN tipoenvase te ON e.tipoenvaseid = te.id
+      LEFT JOIN tipoEnvase te ON e.tipoenvaseid = te.id
       LEFT JOIN ofertas o ON p.id = o.id_producto 
         AND o.activa = 1 
         AND o.fecha_inicio <= CURDATE() 
@@ -191,7 +191,7 @@ const getProducto = async (req, res) => {
       FROM productos p
       LEFT JOIN marcas m ON p.marca = m.id
       LEFT JOIN envases e ON p.envase = e.id
-      LEFT JOIN tipoenvase te ON e.tipoenvaseid = te.id
+      LEFT JOIN tipoEnvase te ON e.tipoenvaseid = te.id
       LEFT JOIN ofertas o ON p.id = o.id_producto 
         AND o.activa = 1 
         AND o.fecha_inicio <= CURDATE() 
@@ -250,7 +250,7 @@ const getEnvases = async (req, res) => {
         e.id, e.nombre, e.litros,
         te.nombre as tipo_envase
       FROM envases e
-      LEFT JOIN tipoenvase te ON e.tipoenvaseid = te.id
+      LEFT JOIN tipoEnvase te ON e.tipoenvaseid = te.id
       ORDER BY e.nombre
     `;
     

@@ -6,7 +6,7 @@
 -- USE nalub_prepedidos;
 
 -- Existing tables (assumed to exist)
--- clientes, productos, marcas, envases, tipoenvase, pedidos, pedidoitems
+-- clientes, productos, marcas, envases, tipoEnvase, pedidos, pedidoItems
 
 -- Create prepedidos_cabecera table
 CREATE TABLE IF NOT EXISTS prepedidos_cabecera (

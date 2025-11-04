@@ -47,7 +47,7 @@ SELECT
     END AS es_principal 
 FROM clientes c 
 JOIN pedidos p ON (p.cliente = c.id OR p.cliente = c.idsecundario) 
-LEFT JOIN pedidoitems pi ON p.id = pi.pedidoId 
+LEFT JOIN pedidoItems pi ON p.id = pi.pedidoId 
 WHERE c.id = ? AND p.fechaEntrega >= DATE_SUB(CURDATE(), INTERVAL 365 DAY) 
 GROUP BY p.id, p.fechaEntrega, p.estado, p.importeTotal, tipo_cliente, es_principal 
 ORDER BY p.fechaEntrega DESC;
@@ -99,7 +99,7 @@ Esta corrección garantiza que la suma de pedidos principales + secundarios = to
 - **Validación**: Cliente ID validado contra tabla `clientes`, Producto ID validado contra tabla `productos`
 - **Estados**: borrador → enviado → procesado → completado/rechazado
 - **Consulta**: Lista de pre-pedidos propios con filtros
-- **Búsqueda de Productos**: Integración con tabla `productos`, `marcas`, `envases`, `tipoenvase`
+- **Búsqueda de Productos**: Integración con tabla `productos`, `marcas`, `envases`, `tipoEnvase`
 
 ## 3. Especificaciones Técnicas
 
@@ -154,13 +154,13 @@ CREATE TABLE envases (
     nombre VARCHAR(100) NOT NULL,
     litros DECIMAL(10,4) NOT NULL,
     tipoenvaseid INT,
-    FOREIGN KEY (tipoenvaseid) REFERENCES tipoenvase(id)
+    FOREIGN KEY (tipoenvaseid) REFERENCES tipoEnvase(id)
 );
 ```
 
-**Tabla: tipoenvase**
+**Tabla: tipoEnvase**
 ```sql
-CREATE TABLE tipoenvase (
+CREATE TABLE tipoEnvase (
     id INT PRIMARY KEY AUTO_INCREMENT,
     nombre VARCHAR(150) NOT NULL
 );
@@ -186,9 +186,9 @@ CREATE TABLE pedidos (
 );
 ```
 
-**Tabla: pedidoitems** (Para detalle de pedidos históricos)
+**Tabla: pedidoItems** (Para detalle de pedidos históricos)
 ```sql
-CREATE TABLE pedidoitems (
+CREATE TABLE pedidoItems (
     id INT PRIMARY KEY AUTO_INCREMENT,
     pedidoId INT NOT NULL,
     productoId INT NOT NULL,

@@ -28,7 +28,7 @@ const getPedidos = async (req, res) => {
             FROM 
                 clientes c 
                 JOIN pedidos p ON (p.cliente = c.id OR p.cliente = c.idsecundario) 
-                LEFT JOIN pedidoitems pi ON p.id = pi.pedidoId 
+                LEFT JOIN pedidoItems pi ON p.id = pi.pedidoId 
             WHERE 
                 c.id = ? 
                 AND p.fechaEntrega >= DATE_SUB(CURDATE(), INTERVAL 365 DAY) 
@@ -93,11 +93,11 @@ const getPedido = async (req, res) => {
                    m.nombre as marca_nombre,
                    e.nombre as envase_nombre, e.litros as envase_litros,
                    te.nombre as tipo_envase_nombre
-            FROM pedidoitems pi
+            FROM pedidoItems pi
             JOIN productos pr ON pi.productoId = pr.id
             LEFT JOIN marcas m ON pr.marca = m.id
             LEFT JOIN envases e ON pr.envase = e.id
-            LEFT JOIN tipoenvase te ON e.tipoenvaseid = te.id
+            LEFT JOIN tipoEnvase te ON e.tipoenvaseid = te.id
             WHERE pi.pedidoId = ?
             ORDER BY pi.id
         `;
