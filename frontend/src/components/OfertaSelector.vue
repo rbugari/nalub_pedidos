@@ -74,9 +74,9 @@ const headers = [
   { title: 'Código', key: 'producto_codigo', sortable: true },
   { title: 'Producto', key: 'producto_nombre', sortable: true },
   { title: 'Marca', key: 'producto_marca', sortable: true },
-  { title: 'Tipo de Envase', key: 'producto_tipo_envase', sortable: true },
-  { title: 'Capacidad', key: 'producto_litros', sortable: true },
-  { title: 'Precio Oferta', key: 'precio_oferta', sortable: true },
+  { title: 'Envase', key: 'producto_envase', sortable: true },
+  { title: 'Precio Oferta', key: 'producto_precio_oferta', sortable: true },
+  { title: 'Descuento', key: 'descuento', sortable: true },
   { title: 'Seleccionar', key: 'actions', sortable: false, width: '120px' }
 ]
 
@@ -309,25 +309,24 @@ function toggleFilters() {
               </td>
               <td>
                 <v-chip 
-                  v-if="item.producto_tipo_envase" 
+                  v-if="item.producto_envase" 
                   size="small" 
                   color="blue" 
                   variant="flat"
                 >
-                  {{ item.producto_tipo_envase }}
+                  {{ item.producto_envase }}
                 </v-chip>
                 <span v-else class="text-grey">-</span>
               </td>
               <td>
-                <span v-if="item.producto_litros" class="font-weight-medium">
-                  {{ formatCapacidad(item.producto_litros) }}
-                </span>
-                <span v-else class="text-grey">-</span>
-              </td>
-              <td>
-                <span class="text-green font-weight-bold">
+                <span class="text-success font-weight-bold text-h6">
                   ${{ formatCurrency(item.producto_precio_oferta) }}
                 </span>
+              </td>
+              <td>
+                <v-chip color="success" size="small" variant="elevated">
+                  -{{ item.descuento_calculado }}%
+                </v-chip>
               </td>
               <td>
                 <v-btn
