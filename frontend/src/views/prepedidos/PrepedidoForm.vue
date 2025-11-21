@@ -420,23 +420,22 @@ export default {
             <v-card 
               v-if="selectedProductForForm" 
               class="mb-4 pa-4" 
-              color="grey-lighten-4" 
               variant="outlined"
             >
-              <v-card-title class="text-h6 pb-2">Información del Producto</v-card-title>
+              <v-card-title class="text-h6 pb-2 text-primary">Información del Producto</v-card-title>
               <v-row dense>
                 <v-col cols="12">
-                  <div class="text-body-1">
+                  <div class="text-body-1 text-primary">
                     <strong>{{ selectedProductForForm.codigo }}</strong> - {{ selectedProductForForm.nombre }}
                   </div>
                 </v-col>
                 <v-col cols="6">
-                  <div class="text-body-2 text-grey-darken-4">
+                  <div class="text-body-2 text-primary">
                     <strong>Tipo:</strong> {{ selectedProductForForm.tipo_envase || 'N/A' }}
                   </div>
                 </v-col>
                 <v-col cols="6">
-                  <div class="text-body-2 text-grey-darken-4">
+                  <div class="text-body-2 text-primary">
                     <strong>Capacidad:</strong> {{ selectedProductForForm.litros ? `${selectedProductForForm.litros}L` : 'N/A' }}
                   </div>
                 </v-col>
