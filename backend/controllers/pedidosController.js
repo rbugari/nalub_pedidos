@@ -1,4 +1,4 @@
-const { executeQuery } = require('../config/database');
+const prisma = require('../lib/prisma');
 
 // Get historical orders for authenticated user (last 365 days)
 const getPedidos = async (req, res) => {
@@ -8,51 +8,80 @@ const getPedidos = async (req, res) => {
         console.log('🔍 Request URL:', req.originalUrl);
         console.log('🔍 Request method:', req.method);
         
-        // Get orders from last 365 days only - includes both primary and secondary accounts
-        const pedidosQuery = `
-            SELECT 
-                p.id, 
-                p.fechaEntrega, 
-                p.estado, 
-                p.importeTotal, 
-                COALESCE(SUM(pi.cantidad), 0) as cantidadBultos, 
-                CASE 
-                    WHEN p.cliente = c.id THEN 'principal' 
-                    WHEN p.cliente = c.idsecundario THEN 'secundario' 
-                    ELSE 'desconocido' 
-                END AS tipo_cliente, 
-                CASE 
-                    WHEN p.cliente = c.id THEN TRUE 
-                    ELSE FALSE 
-                END AS es_principal 
-            FROM 
-                clientes c 
-                JOIN pedidos p ON (p.cliente = c.id OR p.cliente = c.idsecundario) 
-                LEFT JOIN pedidoItems pi ON p.id = pi.pedidoId 
-            WHERE 
-                c.id = ? 
-                AND p.fechaEntrega >= DATE_SUB(CURDATE(), INTERVAL 365 DAY) 
-            GROUP BY 
-                p.id, p.fechaEntrega, p.estado, p.importeTotal, tipo_cliente, es_principal 
-            ORDER BY 
-                p.fechaEntrega DESC
-        `;
+        // Calculate date 365 days ago
+        const oneYearAgo = new Date();
+        oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
         
-        console.log('🔍 Executing query for user:', userId);
-        const pedidos = await executeQuery(pedidosQuery, [userId]);
+        // Get orders from last 365 days - includes both primary and secondary accounts
+        // First get the client to check for secondary ID
+        const cliente = await prisma.clientes.findUnique({
+            where: { id: userId },
+            select: { id: true, idSecundario: true }
+        });
+        
+        if (!cliente) {
+            return res.status(404).json({ error: 'Cliente no encontrado' });
+        }
+        
+        // Build where condition for primary and secondary accounts
+        const whereCondition = {
+            fechaEntrega: {
+                gte: oneYearAgo
+            },
+            OR: [
+                { cliente: cliente.id }
+            ]
+        };
+        
+        // Add secondary account condition if it exists
+        if (cliente.idSecundario) {
+            whereCondition.OR.push({ cliente: cliente.idSecundario });
+        }
+        
+        const pedidos = await prisma.pedidos.findMany({
+            where: whereCondition,
+            include: {
+                pedidoItems: {
+                    select: {
+                        cantidad: true
+                    }
+                },
+                clientes: {
+                    select: {
+                        id: true,
+                        idSecundario: true
+                    }
+                }
+            },
+            orderBy: {
+                fechaEntrega: 'desc'
+            }
+        });
+        
         console.log('🔍 Query result:', pedidos.length, 'pedidos found');
-        console.log('🔍 First few results:', pedidos.slice(0, 3));
         
-        // Format response
-        const formattedPedidos = pedidos.map(pedido => ({
-            id: pedido.id,
-            fechaEntrega: pedido.fechaEntrega,
-            estado: pedido.estado,
-            importeTotal: parseFloat(pedido.importeTotal) || 0,
-            cantidadBultos: parseInt(pedido.cantidadBultos) || 0,
-            tipo_cliente: pedido.tipo_cliente,
-            es_principal: pedido.es_principal
-        }));
+        // Format response with calculated fields
+        const formattedPedidos = pedidos.map(pedido => {
+            // Calculate total bultos from items
+            const cantidadBultos = pedido.pedidoItems.reduce(
+                (sum, item) => sum + item.cantidad, 
+                0
+            );
+            
+            // Determine client type (principal or secundario)
+            const esPrincipal = pedido.cliente === cliente.id;
+            const tipoCliente = esPrincipal ? 'principal' : 'secundario';
+            
+            return {
+                id: pedido.id,
+                fechaEntrega: pedido.fechaEntrega,
+                estado: pedido.estado,
+                importeTotal: parseFloat(pedido.importeTotal.toString()) || 0,
+                cantidadBultos: cantidadBultos || 0,
+                tipo_cliente: tipoCliente,
+                es_principal: esPrincipal
+            };
+        });
         
         const response = {
             success: true,
@@ -73,56 +102,85 @@ const getPedido = async (req, res) => {
         const userId = req.user.id;
         const { id } = req.params;
         
-        // Get order header
-        const pedidoQuery = `
-            SELECT p.id, p.fecha, p.estado, p.importeTotal, p.observacion
-            FROM pedidos p
-            WHERE p.id = ? AND p.cliente = ?
-        `;
-        const [pedido] = await executeQuery(pedidoQuery, [id, userId]);
+        // Validate ID
+        const pedidoId = parseInt(id);
+        if (isNaN(pedidoId)) {
+            return res.status(400).json({ error: 'ID de pedido inválido' });
+        }
+        
+        // Get order with all details, including check for secondary account
+        const cliente = await prisma.clientes.findUnique({
+            where: { id: userId },
+            select: { id: true, idSecundario: true }
+        });
+        
+        if (!cliente) {
+            return res.status(404).json({ error: 'Cliente no encontrado' });
+        }
+        
+        // Check if order belongs to primary or secondary account
+        const whereCondition = {
+            id: pedidoId,
+            OR: [
+                { cliente: cliente.id }
+            ]
+        };
+        
+        if (cliente.idSecundario) {
+            whereCondition.OR.push({ cliente: cliente.idSecundario });
+        }
+        
+        const pedido = await prisma.pedidos.findFirst({
+            where: whereCondition,
+            include: {
+                pedidoItems: {
+                    include: {
+                        productos: {
+                            include: {
+                                marcas: true,
+                                envases: {
+                                    include: {
+                                        tipoEnvase: true
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    orderBy: {
+                        id: 'asc'
+                    }
+                }
+            }
+        });
         
         if (!pedido) {
             return res.status(404).json({ error: 'Pedido no encontrado' });
         }
         
-        // Get order items with product details
-        const itemsQuery = `
-            SELECT pi.id, pi.cantidad, pi.precioUnitario,
-                   pr.id as producto_id, pr.nombre as producto_nombre,
-                   pr.codigo as producto_codigo, pr.precioVenta as producto_precio,
-                   m.nombre as marca_nombre,
-                   e.nombre as envase_nombre, e.litros as envase_litros,
-                   te.nombre as tipo_envase_nombre
-            FROM pedidoItems pi
-            JOIN productos pr ON pi.productoId = pr.id
-            LEFT JOIN marcas m ON pr.marca = m.id
-            LEFT JOIN envases e ON pr.envase = e.id
-            LEFT JOIN tipoEnvase te ON e.tipoenvaseid = te.id
-            WHERE pi.pedidoId = ?
-            ORDER BY pi.id
-        `;
-        const items = await executeQuery(itemsQuery, [id]);
-        
         // Format response
         const formattedPedido = {
-            ...pedido,
-            total: parseFloat(pedido.importeTotal) || 0,
-            items: items.map(item => ({
+            id: pedido.id,
+            fecha: pedido.fecha,
+            estado: pedido.estado,
+            importeTotal: parseFloat(pedido.importeTotal.toString()) || 0,
+            observacion: pedido.observacion,
+            total: parseFloat(pedido.importeTotal.toString()) || 0,
+            items: pedido.pedidoItems.map(item => ({
                 id: item.id,
-                cantidad: parseInt(item.cantidad),
-                precio_unitario: parseFloat(item.precioUnitario) || 0,
-                subtotal: (parseInt(item.cantidad) * parseFloat(item.precioUnitario)) || 0,
+                cantidad: item.cantidad,
+                precio_unitario: parseFloat(item.precioUnitario.toString()) || 0,
+                subtotal: (item.cantidad * parseFloat(item.precioUnitario.toString())) || 0,
                 producto: {
-                    id: item.producto_id,
-                    nombre: item.producto_nombre,
-                    codigo: item.producto_codigo,
-                    precio: parseFloat(item.producto_precio) || 0,
-                    marca: item.marca_nombre,
-                    envase: {
-                        nombre: item.envase_nombre,
-                        litros: item.envase_litros,
-                        tipo: item.tipo_envase_nombre
-                    }
+                    id: item.productos.id,
+                    nombre: item.productos.nombre,
+                    codigo: item.productos.codigo,
+                    precio: parseFloat(item.productos.precioVenta.toString()) || 0,
+                    marca: item.productos.marcas?.nombre || null,
+                    envase: item.productos.envases ? {
+                        nombre: item.productos.envases.nombre,
+                        litros: item.productos.envases.litros,
+                        tipo: item.productos.envases.tipoEnvase?.nombre || null
+                    } : null
                 }
             }))
         };
@@ -142,30 +200,48 @@ const updatePedido = async (req, res) => {
         const { id } = req.params;
         const { estado } = req.body;
         
-        // Validate status
-        const validStatuses = ['pendiente', 'en_proceso', 'completado', 'cancelado'];
-        if (!validStatuses.includes(estado)) {
-            return res.status(400).json({ error: 'Estado inválido' });
+        // Validate ID
+        const pedidoId = parseInt(id);
+        if (isNaN(pedidoId)) {
+            return res.status(400).json({ error: 'ID de pedido inválido' });
         }
         
-        // Check if order exists and belongs to user
-        const checkQuery = `
-            SELECT id FROM pedidos 
-            WHERE id = ? AND cliente = ?
-        `;
-        const [existingPedido] = await executeQuery(checkQuery, [id, userId]);
+        // Get client to check for secondary account
+        const cliente = await prisma.clientes.findUnique({
+            where: { id: userId },
+            select: { id: true, idSecundario: true }
+        });
+        
+        if (!cliente) {
+            return res.status(404).json({ error: 'Cliente no encontrado' });
+        }
+        
+        // Check if order exists and belongs to user (primary or secondary)
+        const whereCondition = {
+            id: pedidoId,
+            OR: [
+                { cliente: cliente.id }
+            ]
+        };
+        
+        if (cliente.idSecundario) {
+            whereCondition.OR.push({ cliente: cliente.idSecundario });
+        }
+        
+        const existingPedido = await prisma.pedidos.findFirst({
+            where: whereCondition,
+            select: { id: true }
+        });
         
         if (!existingPedido) {
             return res.status(404).json({ error: 'Pedido no encontrado' });
         }
         
-        // Update order status
-        const updateQuery = `
-            UPDATE pedidos 
-            SET estado = ? 
-            WHERE id = ? AND cliente = ?
-        `;
-        await executeQuery(updateQuery, [estado, id, userId]);
+        // Update order status (Zod validation already checked estado is valid)
+        await prisma.pedidos.update({
+            where: { id: pedidoId },
+            data: { estado }
+        });
         
         res.json({ 
             success: true, 

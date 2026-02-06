@@ -80,10 +80,17 @@ function logout() {
       </template>
     </v-app-bar>
 
-    <v-main>
+    <v-main :class="{ 'mobile-with-bottom-nav': mobile }">
       <v-container fluid class="pa-4">
         <slot></slot>
       </v-container>
     </v-main>
   </v-app>
 </template>
+
+<style scoped>
+/* Agregar padding inferior en móvil cuando hay bottom navigation */
+.mobile-with-bottom-nav {
+  padding-bottom: 56px !important;
+}
+</style>

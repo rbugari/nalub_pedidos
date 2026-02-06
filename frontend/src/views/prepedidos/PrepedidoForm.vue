@@ -111,22 +111,39 @@ function onProductSelected(producto) {
   productSelectorDialog.value = false
 }
 
-// Manejar selección de oferta
-function onOfertaSelected(productoConOferta) {
-  console.log('🎯 OFERTA SELECCIONADA:', productoConOferta) // Debug log
-  selectedProductForForm.value = productoConOferta
-  newItem.value.productoId = productoConOferta.id
-  newItem.value.descripcion = `${productoConOferta.nombre} (${productoConOferta.descuento_texto})`
-  newItem.value.precioEstimado = parseFloat(productoConOferta.precioBase || productoConOferta.precio || 0)
-  newItem.value.unidad = productoConOferta.envase || 'envase'
+// Manejar selección de ofertas (plural, puede ser múltiples productos)
+function onOfertasSelected(data) {
+  console.log('🎯 OFERTAS SELECCIONADAS:', data)
   
-  // ✅ CORREGIR: Usar 'oferta_id' que es el campo que realmente envía OfertaSelector
-  newItem.value.ofertaid = productoConOferta.oferta_id
-  console.log('🎯 OFERTAID CAPTURADO (CORREGIDO):', newItem.value.ofertaid) // Debug log
-  console.log('🔍 OBJETO COMPLETO RECIBIDO:', JSON.stringify(productoConOferta, null, 2)) // Debug completo
+  // data = { oferta_id, tipo, titulo, productos: [...] }
+  const { oferta_id, tipo, titulo, productos } = data
+  
+  const tipoLabels = {
+    unitaria: 'Oferta Unitaria',
+    minima: 'Oferta por Cantidad Mínima',
+    bundle: 'Combo',
+    mix: 'Oferta Mix'
+  }
+  
+  // Agregar todos los productos de la oferta al prepedido
+  productos.forEach(producto => {
+    const item = {
+      productoId: producto.id_producto,
+      descripcion: `${producto.codigo} - ${producto.nombre} (${titulo})`,
+      cantidad: producto.cantidad,
+      precioEstimado: parseFloat(producto.precioBase || 0),
+      unidad: producto.envase || 'envase',
+      ofertaid: oferta_id
+    }
+    
+    console.log('➕ Agregando item con oferta:', item)
+    form.value.items.push(item)
+  })
   
   ofertaSelectorDialog.value = false
-  addItemDialog.value = true // Abrir el diálogo para configurar cantidad
+  
+  // Mostrar notificación de éxito
+  console.log(`✓ ${productos.length} producto(s) agregado(s) con oferta #${oferta_id}`)
 }
 
 async function loadPrepedido() {
@@ -501,7 +518,7 @@ export default {
     <!-- Selector de ofertas -->
     <OfertaSelector
       v-model="ofertaSelectorDialog"
-      @oferta-selected="onOfertaSelected"
+      @ofertas-selected="onOfertasSelected"
     />
   </div>
 </template>

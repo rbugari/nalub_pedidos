@@ -1,8 +1,9 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { executeQuery } = require('../config/database');
+const prisma = require('../lib/prisma');
 
-// Login de usuario
+// Login de usuario con Prisma ORM
 const login = async (req, res) => {
   try {
     const { usuario, password } = req.body;
@@ -14,17 +15,26 @@ const login = async (req, res) => {
       });
     }
     
-    const query = 'SELECT * FROM clientes WHERE usuario = ?';
-    const users = await executeQuery(query, [usuario]);
+    // Usar Prisma en lugar de executeQuery
+    const user = await prisma.clientes.findFirst({
+      where: { usuario },
+      select: {
+        id: true,
+        nombre: true,
+        usuario: true,
+        email: true,
+        pwd: true,
+        deuda: true,
+        fechaUltimoPago: true
+      }
+    });
     
-    if (users.length === 0) {
+    if (!user) {
       return res.status(401).json({
         success: false,
         message: 'Credenciales inválidas - Usuario no encontrado'
       });
     }
-
-    const user = users[0];
     
     // Comparación directa de contraseñas (sin bcrypt)
     if (password !== user.pwd) {
@@ -83,7 +93,7 @@ const login = async (req, res) => {
   }
 };
 
-// Cambiar contraseña
+// Cambiar contraseña con Prisma ORM
 const changePassword = async (req, res) => {
   console.log('=== INICIO changePassword ===');
   console.log('req.body:', req.body);
@@ -131,15 +141,16 @@ const changePassword = async (req, res) => {
       });
     }
     
-    // Obtener contraseña actual
-    console.log('Ejecutando query SELECT...');
-    const query = 'SELECT pwd FROM clientes WHERE id = ?';
-    console.log('Query:', query, 'Parámetros:', [userId]);
+    // Usar Prisma para obtener contraseña actual
+    console.log('Buscando usuario con Prisma...');
+    const user = await prisma.clientes.findUnique({
+      where: { id: userId },
+      select: { pwd: true }
+    });
     
-    const users = await executeQuery(query, [userId]);
-    console.log('Resultado query SELECT:', users);
+    console.log('Resultado Prisma:', user ? 'Usuario encontrado' : 'Usuario no encontrado');
     
-    if (users.length === 0) {
+    if (!user) {
       console.error('❌ ERROR CRÍTICO: Usuario no encontrado en BD para changePassword');
       console.error('❌ userId buscado:', userId);
       console.error('❌ Esto indica un problema de sincronización entre token JWT y BD');
@@ -149,10 +160,10 @@ const changePassword = async (req, res) => {
       });
     }
     
-    console.log('Usuario encontrado, pwd en BD:', users[0].pwd ? '[PRESENTE]' : '[AUSENTE]');
+    console.log('Usuario encontrado, pwd en BD:', user.pwd ? '[PRESENTE]' : '[AUSENTE]');
     
     // Verificar contraseña actual (comparación directa, sin bcrypt para mantener consistencia con login)
-    if (currentPassword !== users[0].pwd) {
+    if (currentPassword !== user.pwd) {
       console.log('ERROR: Contraseña actual incorrecta');
       return res.status(401).json({
         success: false,
@@ -162,13 +173,12 @@ const changePassword = async (req, res) => {
     
     console.log('Contraseña actual verificada correctamente');
     
-    // Actualizar contraseña (sin encriptar para mantener consistencia con login)
-    console.log('Ejecutando query UPDATE...');
-    const updateQuery = 'UPDATE clientes SET pwd = ? WHERE id = ?';
-    console.log('Query UPDATE:', updateQuery, 'Parámetros:', [newPassword ? '[PRESENTE]' : '[AUSENTE]', userId]);
-    
-    const updateResult = await executeQuery(updateQuery, [newPassword, userId]);
-    console.log('Resultado query UPDATE:', updateResult);
+    // Actualizar contraseña con Prisma
+    console.log('Actualizando contraseña con Prisma...');
+    await prisma.clientes.update({
+      where: { id: userId },
+      data: { pwd: newPassword }
+    });
     
     console.log('Contraseña actualizada exitosamente');
     res.json({

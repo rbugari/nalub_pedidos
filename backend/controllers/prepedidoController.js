@@ -1,32 +1,16 @@
-const { executeQuery } = require('../config/database');
+const prisma = require('../lib/prisma');
+const { calcularPrecioConOferta } = require('./ofertasController');
 
-// Crear nuevo pre-pedido
+// Crear nuevo pre-pedido con Prisma
 const createPrepedido = async (req, res) => {
-  const connection = await require('../config/database').pool.getConnection();
-  
   try {
     const clienteId = req.user.id;
     const { observaciones, items } = req.body;
     
-    // 🔍 DEBUG ULTRA-DETALLADO: Verificar datos recibidos
     console.log('🚀 === INICIO createPrepedido ===');
     console.log('🔍 Cliente ID:', clienteId);
     console.log('🔍 Observaciones:', observaciones);
-    console.log('🔍 Items recibidos (RAW):', JSON.stringify(items, null, 2));
-    console.log('🔍 Cantidad de items:', items?.length || 0);
-    
-    // Verificar cada item individualmente
-    items?.forEach((item, index) => {
-      console.log(`🎯 ITEM ${index + 1}:`, {
-        productoId: item.productoId,
-        descripcion: item.descripcion,
-        cantidad: item.cantidad,
-        ofertaid: item.ofertaid,
-        ofertaid_type: typeof item.ofertaid,
-        ofertaid_is_null: item.ofertaid === null,
-        ofertaid_is_undefined: item.ofertaid === undefined
-      });
-    });
+    console.log('🔍 Items recibidos:', items?.length || 0);
 
     if (!items || items.length === 0) {
       return res.status(400).json({
@@ -35,184 +19,183 @@ const createPrepedido = async (req, res) => {
       });
     }
 
-    await connection.beginTransaction();
+    // Usar transacción de Prisma
+    const result = await prisma.$transaction(async (tx) => {
+      // Crear el prepedido
+      const prepedido = await tx.prepedidos_cabecera.create({
+        data: {
+          cliente_id: clienteId,
+          observaciones: observaciones || null,
+          estado: 'borrador',
+          fecha_creacion: new Date()
+        }
+      });
+      
+      console.log('✅ Prepedido creado con ID:', prepedido.id);
 
-    // Crear el prepedido
-    const prepedidoQuery = `
-      INSERT INTO prepedidos_cabecera (cliente_id, observaciones, estado, fecha_creacion)
-      VALUES (?, ?, 'borrador', NOW())
-    `;
-    
-    const [prepedidoResult] = await connection.execute(prepedidoQuery, [
-      clienteId,
-      observaciones || null
-    ]);
-    
-    const prepedidoId = prepedidoResult.insertId;
-    console.log('✅ Prepedido creado con ID:', prepedidoId);
-
-    // Insertar items
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      
-      console.log(`🔄 PROCESANDO ITEM ${i + 1}/${items.length}:`);
-      console.log('📦 Item RAW del frontend:', JSON.stringify(item, null, 2));
-      console.log('🎯 OFERTAID RAW:', item.ofertaid, 'Tipo:', typeof item.ofertaid);
-      
-      // Validar producto
-      const productoQuery = 'SELECT id, nombre FROM productos WHERE id = ? AND stockActual > 0';
-      const [productos] = await connection.execute(productoQuery, [item.productoId]);
-      
-      if (productos.length === 0) {
-        throw new Error(`Producto con ID ${item.productoId} no encontrado`);
+      // Insertar items
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        
+        console.log(`🔄 PROCESANDO ITEM ${i + 1}/${items.length}`);
+        
+        // Validar producto con Prisma
+        const producto = await tx.productos.findFirst({
+          where: {
+            id: item.productoId,
+            stockActual: { gt: 0 }
+          },
+          select: {
+            id: true,
+            nombre: true,
+            precioVenta: true
+          }
+        });
+        
+        if (!producto) {
+          throw new Error(`Producto con ID ${item.productoId} no encontrado o sin stock`);
+        }
+        
+        let precioFinal = item.precioEstimado || producto.precioVenta;
+        
+        // Si hay ofertaid, calcular precio con oferta
+        if (item.ofertaid) {
+          console.log('🎁 Aplicando oferta ID:', item.ofertaid);
+          
+          const oferta = await tx.ofertas.findFirst({
+            where: {
+              id: item.ofertaid,
+              activa: true
+            },
+            select: {
+              id: true,
+              tipo: true,
+              modo_precio: true,
+              valor_precio: true,
+              min_unidades_total: true,
+              unidad_base: true,
+              activa: true
+            }
+          });
+          
+          if (oferta) {
+            // Verificar que el producto esté en la oferta
+            const detalle = await tx.ofertas_detalle.findFirst({
+              where: {
+                oferta_id: item.ofertaid,
+                producto_id: item.productoId
+              }
+            });
+            
+            if (detalle) {
+              const precioInfo = calcularPrecioConOferta(
+                oferta,
+                producto.precioVenta,
+                item.cantidad || 1
+              );
+              
+              precioFinal = precioInfo.precioUnitario;
+              console.log('💰 Precio original:', producto.precioVenta);
+              console.log('💰 Precio con oferta:', precioFinal);
+            }
+          }
+        }
+        
+        // Insertar item
+        await tx.prepedidos_items.create({
+          data: {
+            prepedido_id: prepedido.id,
+            producto_id: item.productoId,
+            descripcion: producto.nombre,
+            cantidad: item.cantidad || 1,
+            unidad: item.unidad || 'unidad',
+            precio_estimado: precioFinal,
+            importe_unitario: precioFinal,
+            observaciones: item.observaciones || null,
+            ofertaid: item.ofertaid || null
+          }
+        });
+        
+        console.log('✅ Item insertado');
       }
-      
-      // Preparar valores para INSERT
-      const valores = {
-        prepedidoId: prepedidoId,
-        productoId: item.productoId,
-        descripcion: productos[0].nombre,
-        cantidad: item.cantidad || 1,
-        unidad: item.unidad || 'unidad',
-        precioEstimado: item.precioEstimado || 0,
-        observaciones: item.observaciones || null,
-        ofertaid: item.ofertaid !== undefined && item.ofertaid !== null ? item.ofertaid : null
-      };
-      
-      console.log('💾 VALORES PARA INSERT:', JSON.stringify(valores, null, 2));
-      console.log('🎯 OFERTAID FINAL:', valores.ofertaid, 'Tipo:', typeof valores.ofertaid);
-      
-      const itemQuery = `
-        INSERT INTO prepedidos_items 
-        (prepedido_id, producto_id, descripcion, cantidad, unidad, precio_estimado, observaciones, ofertaid)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `;
-      
-      console.log('📝 QUERY SQL:', itemQuery);
-      console.log('📝 PARÁMETROS:', [
-        valores.prepedidoId,
-        valores.productoId,
-        valores.descripcion,
-        valores.cantidad,
-        valores.unidad,
-        valores.precioEstimado,
-        valores.observaciones,
-        valores.ofertaid
-      ]);
-      
-      const insertResult = await connection.execute(itemQuery, [
-        valores.prepedidoId,
-        valores.productoId,
-        valores.descripcion,
-        valores.cantidad,
-        valores.unidad,
-        valores.precioEstimado,
-        valores.observaciones,
-        valores.ofertaid
-      ]);
-      
-      // 🔍 DIAGNÓSTICO COMPLETO del insertResult
-      console.log('🔍 DIAGNÓSTICO insertResult completo:', JSON.stringify(insertResult, null, 2));
-      console.log('🔍 insertResult.insertId:', insertResult.insertId);
-      console.log('🔍 insertResult[0]:', insertResult[0]);
-      console.log('🔍 Tipo de insertResult:', typeof insertResult);
-      console.log('🔍 Es array insertResult:', Array.isArray(insertResult));
-      
-      // ✅ CORREGIR: Destructuring correcto para mysql2
-      const insertId = insertResult.insertId;
-      console.log('✅ Item insertado con ID:', insertId);
-      
-      // VERIFICACIÓN INMEDIATA: Leer el registro recién insertado (solo si insertId existe)
-      if (insertId) {
-        const verificacionQuery = 'SELECT * FROM prepedidos_items WHERE id = ?';
-        const [registroInsertado] = await connection.execute(verificacionQuery, [insertId]);
-        console.log('🔍 VERIFICACIÓN - Registro insertado:', JSON.stringify(registroInsertado[0], null, 2));
-      } else {
-        console.log('⚠️ ADVERTENCIA: insertId es undefined, no se puede verificar el registro');
-      }
-    }
 
-    await connection.commit();
+      return prepedido;
+    });
+
     console.log('🎉 === TRANSACCIÓN CREATE COMPLETADA ===');
 
     res.status(201).json({
       success: true,
       message: 'Pre-pedido creado exitosamente',
-      prepedidoId: prepedidoId
+      prepedidoId: result.id
     });
 
   } catch (error) {
-    await connection.rollback();
     console.error('❌ ERROR EN createPrepedido:', error);
-    console.error('❌ Stack trace:', error.stack);
     res.status(500).json({
       success: false,
       message: error.message || 'Error interno del servidor'
     });
-  } finally {
-    connection.release();
   }
 };
 
-// Obtener pre-pedidos del usuario
+// Obtener pre-pedidos del usuario con Prisma
 const getPrepedidos = async (req, res) => {
   try {
     const clienteId = req.user.id;
     const { estado, limite = 10, pagina = 1 } = req.query;
     
-    console.log('🔍 getPrepedidos - Parámetros recibidos:', { clienteId, estado, limite, pagina });
+    console.log('🔍 getPrepedidos - Parámetros:', { clienteId, estado, limite, pagina });
     
-    let whereClause = 'WHERE pc.cliente_id = ?';
-    let params = [clienteId];
+    const where = {
+      cliente_id: clienteId,
+      ...(estado && { estado })
+    };
     
-    if (estado) {
-      whereClause += ' AND pc.estado = ?';
-      params.push(estado);
-    }
+    const offset = (pagina - 1) * parseInt(limite);
     
-    const offset = (pagina - 1) * limite;
+    const prepedidos = await prisma.prepedidos_cabecera.findMany({
+      where,
+      include: {
+        clientes: {
+          select: { nombre: true }
+        },
+        prepedidos_items: {
+          select: {
+            precio_estimado: true,
+            cantidad: true
+          }
+        }
+      },
+      orderBy: {
+        fecha_creacion: 'desc'
+      },
+      take: parseInt(limite),
+      skip: offset
+    });
     
-    const query = `
-      SELECT 
-        pc.id,
-        pc.observaciones,
-        pc.estado,
-        pc.fecha_creacion,
-        c.nombre as cliente,
-        COUNT(pi.id) as total_items,
-        COALESCE(SUM(pi.precio_estimado * pi.cantidad), 0) as total_estimado
-      FROM prepedidos_cabecera pc
-      LEFT JOIN prepedidos_items pi ON pc.id = pi.prepedido_id
-      LEFT JOIN clientes c ON pc.cliente_id = c.id
-      ${whereClause}
-      GROUP BY pc.id, c.nombre
-      ORDER BY pc.fecha_creacion DESC
-      LIMIT ? OFFSET ?
-    `;
+    // Transformar datos para el frontend
+    const data = prepedidos.map(p => ({
+      id: p.id,
+      observaciones: p.observaciones,
+      estado: p.estado,
+      fecha_creacion: p.fecha_creacion,
+      cliente: p.clientes.nombre,
+      total_items: p.prepedidos_items.length,
+      total_estimado: p.prepedidos_items.reduce((sum, item) => 
+        sum + (Number(item.precio_estimado) * Number(item.cantidad)), 0
+      )
+    }));
     
-    params.push(parseInt(limite), parseInt(offset));
-    
-    console.log('🔍 getPrepedidos - Query SQL:', query);
-    console.log('🔍 getPrepedidos - Parámetros SQL:', params);
-    
-    const prepedidos = await executeQuery(query, params);
-    
-    console.log('🔍 getPrepedidos - Resultado de la consulta:', prepedidos);
-    console.log('🔍 getPrepedidos - Número de filas:', prepedidos.length);
-    
-    const responseData = {
+    res.json({
       success: true,
-      data: prepedidos,
+      data,
       pagination: {
         pagina: parseInt(pagina),
         limite: parseInt(limite),
-        total: prepedidos.length
+        total: data.length
       }
-    };
-    
-    console.log('🔍 getPrepedidos - Respuesta final:', JSON.stringify(responseData, null, 2));
-    
-    res.json(responseData);
+    });
     
   } catch (error) {
     console.error('❌ Error obteniendo pre-pedidos:', error);
@@ -223,62 +206,68 @@ const getPrepedidos = async (req, res) => {
   }
 };
 
-// Obtener pre-pedido específico
+// Obtener pre-pedido específico con Prisma
 const getPrepedido = async (req, res) => {
   try {
     const { id } = req.params;
     const clienteId = req.user.id;
     
-    // Obtener cabecera
-    const cabeceraQuery = `
-      SELECT * FROM prepedidos_cabecera 
-      WHERE id = ? AND cliente_id = ?
-    `;
+    const prepedido = await prisma.prepedidos_cabecera.findFirst({
+      where: {
+        id: parseInt(id),
+        cliente_id: clienteId
+      },
+      include: {
+        prepedidos_items: {
+          include: {
+            productos: {
+              select: {
+                nombre: true,
+                codigo: true
+              }
+            }
+          }
+        }
+      }
+    });
     
-    const cabeceras = await executeQuery(cabeceraQuery, [id, clienteId]);
-    
-    if (cabeceras.length === 0) {
+    if (!prepedido) {
       return res.status(404).json({
         success: false,
         message: 'Pre-pedido no encontrado'
       });
     }
     
-    // Obtener items
-    const itemsQuery = `
-      SELECT 
-        pi.id,
-        pi.producto_id,
-        pi.descripcion,
-        pi.cantidad,
-        pi.unidad,
-        pi.precio_estimado,
-        pi.observaciones,
-        pi.ofertaid,
-        p.nombre as producto_nombre,
-        p.codigo as producto_codigo
-      FROM prepedidos_items pi
-      JOIN productos p ON pi.producto_id = p.id
-      WHERE pi.prepedido_id = ?
-    `;
+    // Transformar items para el frontend
+    const items = prepedido.prepedidos_items.map(item => ({
+      id: item.id,
+      producto_id: item.producto_id,
+      descripcion: item.descripcion,
+      cantidad: item.cantidad,
+      unidad: item.unidad,
+      precio_estimado: item.precio_estimado,
+      observaciones: item.observaciones,
+      ofertaid: item.ofertaid,
+      producto_nombre: item.productos.nombre,
+      producto_codigo: item.productos.codigo
+    }));
     
-    const items = await executeQuery(itemsQuery, [id]);
+    const totalEstimado = items.reduce((total, item) => 
+      total + (Number(item.precio_estimado) * Number(item.cantidad)), 0
+    );
     
-    // Calcular total estimado
-    const totalEstimado = items.reduce((total, item) => {
-      return total + (parseFloat(item.precio_estimado) * parseInt(item.cantidad));
-    }, 0);
-    
-    const prepedido = {
-      ...cabeceras[0],
+    const data = {
+      ...prepedido,
       items,
       total_estimado: totalEstimado,
       total_items: items.length
     };
     
+    delete data.prepedidos_items;
+    
     res.json({
       success: true,
-      data: prepedido
+      data
     });
     
   } catch (error) {
@@ -290,134 +279,133 @@ const getPrepedido = async (req, res) => {
   }
 };
 
-// Actualizar pre-pedido (solo en estado borrador)
+// Actualizar pre-pedido (solo en estado borrador) con Prisma
 const updatePrepedido = async (req, res) => {
-  const connection = await require('../config/database').pool.getConnection();
-  
   try {
     const { id } = req.params;
     const { observaciones, items } = req.body;
     const clienteId = req.user.id;
     
-    // 🔍 DEBUG: Log completo del payload recibido
-    console.log('🚀🚀🚀 UPDATE PREPEDIDO - PAYLOAD RECIBIDO 🚀🚀🚀');
+    console.log('🚀 UPDATE PREPEDIDO');
     console.log('📋 Prepedido ID:', id);
     console.log('👤 Cliente ID:', clienteId);
     console.log('📝 Observaciones:', observaciones);
-    console.log('📦 Items recibidos:', JSON.stringify(items, null, 2));
-    console.log('🎯 Items con ofertaid:', items.filter(item => item.ofertaid));
+    console.log('📦 Items:', items?.length || 0);
     
-    await connection.beginTransaction();
-    
-    // Verificar que el pre-pedido existe y está en estado borrador
-    const checkQuery = `
-      SELECT estado FROM prepedidos_cabecera 
-      WHERE id = ? AND cliente_id = ?
-    `;
-    
-    const [prepedidos] = await connection.execute(checkQuery, [id, clienteId]);
-    
-    if (prepedidos.length === 0) {
-      throw new Error('Pre-pedido no encontrado');
-    }
-    
-    if (prepedidos[0].estado !== 'borrador') {
-      throw new Error('Solo se pueden editar pre-pedidos en estado borrador');
-    }
-    
-    // Actualizar cabecera
-    const updateCabeceraQuery = `
-      UPDATE prepedidos_cabecera 
-      SET observaciones = ?
-      WHERE id = ?
-    `;
-    
-    await connection.execute(updateCabeceraQuery, [observaciones || '', id]);
-    
-    // Eliminar items existentes
-    await connection.execute('DELETE FROM prepedidos_items WHERE prepedido_id = ?', [id]);
-    
-    // Insertar nuevos items
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
+    await prisma.$transaction(async (tx) => {
+      // Verificar que el pre-pedido existe y está en estado borrador
+      const prepedido = await tx.prepedidos_cabecera.findFirst({
+        where: {
+          id: parseInt(id),
+          cliente_id: clienteId
+        },
+        select: { estado: true }
+      });
       
-      console.log(`🔄 PROCESANDO ITEM ${i + 1}/${items.length}:`);
-      console.log('📦 Item RAW del frontend:', JSON.stringify(item, null, 2));
-      console.log('🎯 OFERTAID RAW:', item.ofertaid, 'Tipo:', typeof item.ofertaid);
-      
-      // Validar producto
-      const productoQuery = 'SELECT id, nombre FROM productos WHERE id = ? AND stockActual > 0';
-      const [productos] = await connection.execute(productoQuery, [item.productoId]);
-      
-      if (productos.length === 0) {
-        throw new Error(`Producto con ID ${item.productoId} no encontrado`);
+      if (!prepedido) {
+        throw new Error('Pre-pedido no encontrado');
       }
       
-      // Preparar valores para INSERT
-      const valores = {
-        prepedidoId: id,
-        productoId: item.productoId,
-        descripcion: productos[0].nombre,
-        cantidad: item.cantidad || 1,
-        unidad: item.unidad || 'unidad',
-        precioEstimado: item.precioEstimado || 0,
-        observaciones: item.observaciones || null,
-        ofertaid: item.ofertaid !== undefined && item.ofertaid !== null ? item.ofertaid : null
-      };
-      
-      console.log('💾 VALORES PARA INSERT:', JSON.stringify(valores, null, 2));
-      console.log('🎯 OFERTAID FINAL:', valores.ofertaid, 'Tipo:', typeof valores.ofertaid);
-      
-      const itemQuery = `
-        INSERT INTO prepedidos_items 
-        (prepedido_id, producto_id, descripcion, cantidad, unidad, precio_estimado, observaciones, ofertaid)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `;
-      
-      console.log('📝 QUERY SQL:', itemQuery);
-      console.log('📝 PARÁMETROS:', [
-        valores.prepedidoId,
-        valores.productoId,
-        valores.descripcion,
-        valores.cantidad,
-        valores.unidad,
-        valores.precioEstimado,
-        valores.observaciones,
-        valores.ofertaid
-      ]);
-      
-      const insertResult = await connection.execute(itemQuery, [
-        valores.prepedidoId,
-        valores.productoId,
-        valores.descripcion,
-        valores.cantidad,
-        valores.unidad,
-        valores.precioEstimado,
-        valores.observaciones,
-        valores.ofertaid
-      ]);
-      
-      // 🔍 DIAGNÓSTICO: Estructura completa de insertResult
-      console.log('🔍 DIAGNÓSTICO insertResult completo:', JSON.stringify(insertResult, null, 2));
-      console.log('🔍 DIAGNÓSTICO insertResult[0]:', insertResult[0]);
-      console.log('🔍 DIAGNÓSTICO insertResult[1]:', insertResult[1]);
-      console.log('🔍 DIAGNÓSTICO insertResult.insertId:', insertResult.insertId);
-      
-      // ✅ CORREGIR: Acceso correcto al insertId según estructura mysql2
-      const insertId = insertResult[0]?.insertId || insertResult.insertId;
-      console.log('✅ Item insertado con ID:', insertId);
-      
-      // VERIFICACIÓN INMEDIATA: Leer el registro recién insertado (solo si insertId existe)
-      if (insertId) {
-        const verificacionQuery = 'SELECT * FROM prepedidos_items WHERE id = ?';
-        const [registroInsertado] = await connection.execute(verificacionQuery, [insertId]);
-        console.log('🔍 VERIFICACIÓN - Registro insertado:', JSON.stringify(registroInsertado[0], null, 2));
-      } else {
-        console.log('⚠️ ADVERTENCIA: insertId es undefined, no se puede verificar el registro');
+      if (prepedido.estado !== 'borrador') {
+        throw new Error('Solo se pueden editar pre-pedidos en estado borrador');
       }
-    }
+      
+      // Actualizar cabecera
+      await tx.prepedidos_cabecera.update({
+        where: { id: parseInt(id) },
+        data: { observaciones: observaciones || '' }
+      });
+      
+      // Eliminar items existentes
+      await tx.prepedidos_items.deleteMany({
+        where: { prepedido_id: parseInt(id) }
+      });
+      
+      // Insertar nuevos items
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        
+        console.log(`🔄 PROCESANDO ITEM ${i + 1}/${items.length}`);
+        
+        // Validar producto
+        const producto = await tx.productos.findFirst({
+          where: {
+            id: item.productoId,
+            stockActual: { gt: 0 }
+          },
+          select: {
+            id: true,
+            nombre: true,
+            precioVenta: true
+          }
+        });
+        
+        if (!producto) {
+          throw new Error(`Producto con ID ${item.productoId} no encontrado o sin stock`);
+        }
+        
+        let precioFinal = item.precioEstimado || producto.precioVenta;
+        
+        // Si hay ofertaid, calcular precio con oferta
+        if (item.ofertaid) {
+          console.log('🎁 Aplicando oferta ID:', item.ofertaid);
+          
+          const oferta = await tx.ofertas.findFirst({
+            where: {
+              id: item.ofertaid,
+              activa: true
+            },
+            select: {
+              id: true,
+              tipo: true,
+              modo_precio: true,
+              valor_precio: true,
+              min_unidades_total: true,
+              unidad_base: true,
+              activa: true
+            }
+          });
+          
+          if (oferta) {
+            const detalle = await tx.ofertas_detalle.findFirst({
+              where: {
+                oferta_id: item.ofertaid,
+                producto_id: item.productoId
+              }
+            });
+            
+            if (detalle) {
+              const precioInfo = calcularPrecioConOferta(
+                oferta,
+                producto.precioVenta,
+                item.cantidad || 1
+              );
+              
+              precioFinal = precioInfo.precioUnitario;
+              console.log('💰 Precio con oferta:', precioFinal);
+            }
+          }
+        }
+        
+        // Insertar item
+        await tx.prepedidos_items.create({
+          data: {
+            prepedido_id: parseInt(id),
+            producto_id: item.productoId,
+            descripcion: producto.nombre,
+            cantidad: item.cantidad || 1,
+            unidad: item.unidad || 'unidad',
+            precio_estimado: precioFinal,
+            importe_unitario: precioFinal,
+            observaciones: item.observaciones || null,
+            ofertaid: item.ofertaid || null
+          }
+        });
+        
+        console.log('✅ Item insertado');
+      }
+    });
     
-    await connection.commit();
     console.log('🎉 === TRANSACCIÓN UPDATE COMPLETADA ===');
     
     res.json({
@@ -426,39 +414,37 @@ const updatePrepedido = async (req, res) => {
     });
     
   } catch (error) {
-    await connection.rollback();
     console.error('❌ Error actualizando pre-pedido:', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Error interno del servidor'
     });
-  } finally {
-    connection.release();
   }
 };
 
-// Enviar pre-pedido (cambiar estado a enviado)
+// Enviar pre-pedido (cambiar estado a enviado) con Prisma
 const enviarPrepedido = async (req, res) => {
   try {
     const { id } = req.params;
     const clienteId = req.user.id;
     
     // Verificar que el pre-pedido existe y está en estado borrador
-    const checkQuery = `
-      SELECT estado FROM prepedidos_cabecera 
-      WHERE id = ? AND cliente_id = ?
-    `;
+    const prepedido = await prisma.prepedidos_cabecera.findFirst({
+      where: {
+        id: parseInt(id),
+        cliente_id: clienteId
+      },
+      select: { estado: true }
+    });
     
-    const prepedidos = await executeQuery(checkQuery, [id, clienteId]);
-    
-    if (prepedidos.length === 0) {
+    if (!prepedido) {
       return res.status(404).json({
         success: false,
         message: 'Pre-pedido no encontrado'
       });
     }
     
-    if (prepedidos[0].estado !== 'borrador') {
+    if (prepedido.estado !== 'borrador') {
       return res.status(400).json({
         success: false,
         message: 'Solo se pueden enviar pre-pedidos en estado borrador'
@@ -466,13 +452,10 @@ const enviarPrepedido = async (req, res) => {
     }
     
     // Actualizar estado
-    const updateQuery = `
-      UPDATE prepedidos_cabecera 
-      SET estado = 'enviado'
-      WHERE id = ?
-    `;
-    
-    await executeQuery(updateQuery, [id]);
+    await prisma.prepedidos_cabecera.update({
+      where: { id: parseInt(id) },
+      data: { estado: 'enviado' }
+    });
     
     res.json({
       success: true,
@@ -488,39 +471,40 @@ const enviarPrepedido = async (req, res) => {
   }
 };
 
-// Eliminar pre-pedido (solo en estado borrador)
+// Eliminar pre-pedido (solo en estado borrador) con Prisma
 const deletePrepedido = async (req, res) => {
-  const connection = await require('../config/database').pool.getConnection();
-  
   try {
     const { id } = req.params;
     const clienteId = req.user.id;
     
-    await connection.beginTransaction();
-    
-    // Verificar que el pre-pedido existe y está en estado borrador
-    const checkQuery = `
-      SELECT estado FROM prepedidos_cabecera 
-      WHERE id = ? AND cliente_id = ?
-    `;
-    
-    const [prepedidos] = await connection.execute(checkQuery, [id, clienteId]);
-    
-    if (prepedidos.length === 0) {
-      throw new Error('Pre-pedido no encontrado');
-    }
-    
-    if (prepedidos[0].estado !== 'borrador') {
-      throw new Error('Solo se pueden eliminar pre-pedidos en estado borrador');
-    }
-    
-    // Eliminar items primero
-    await connection.execute('DELETE FROM prepedidos_items WHERE prepedido_id = ?', [id]);
-    
-    // Eliminar cabecera
-    await connection.execute('DELETE FROM prepedidos_cabecera WHERE id = ?', [id]);
-    
-    await connection.commit();
+    await prisma.$transaction(async (tx) => {
+      // Verificar que el pre-pedido existe y está en estado borrador
+      const prepedido = await tx.prepedidos_cabecera.findFirst({
+        where: {
+          id: parseInt(id),
+          cliente_id: clienteId
+        },
+        select: { estado: true }
+      });
+      
+      if (!prepedido) {
+        throw new Error('Pre-pedido no encontrado');
+      }
+      
+      if (prepedido.estado !== 'borrador') {
+        throw new Error('Solo se pueden eliminar pre-pedidos en estado borrador');
+      }
+      
+      // Eliminar items primero (por constraint de FK)
+      await tx.prepedidos_items.deleteMany({
+        where: { prepedido_id: parseInt(id) }
+      });
+      
+      // Eliminar cabecera
+      await tx.prepedidos_cabecera.delete({
+        where: { id: parseInt(id) }
+      });
+    });
     
     res.json({
       success: true,
@@ -528,14 +512,11 @@ const deletePrepedido = async (req, res) => {
     });
     
   } catch (error) {
-    await connection.rollback();
     console.error('Error eliminando pre-pedido:', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Error interno del servidor'
     });
-  } finally {
-    connection.release();
   }
 };
 

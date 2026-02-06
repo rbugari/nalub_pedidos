@@ -1,41 +1,130 @@
-const { executeQuery } = require('../config/database');
+const prisma = require('../lib/prisma');
 
-// Obtener todas las ofertas con paginación
+/**
+ * Función auxiliar: Calcular precio con oferta
+ * @param {Object} oferta - Oferta con tipo, modo_precio, valor_precio
+ * @param {Number} precioOriginal - Precio de venta del producto
+ * @param {Number} cantidad - Cantidad de unidades
+ * @returns {Object} { precioUnitario, precioTotal, descuentoPct }
+ */
+const calcularPrecioConOferta = (oferta, precioOriginal, cantidad = 1) => {
+  let precioUnitario = precioOriginal;
+  let precioTotal = precioOriginal * cantidad;
+  let descuentoPct = 0;
+
+  // Según el modo de precio
+  switch (oferta.modo_precio) {
+    case 'precio_unitario':
+      // El valor_precio es el precio unitario final
+      precioUnitario = oferta.valor_precio || precioOriginal;
+      precioTotal = precioUnitario * cantidad;
+      descuentoPct = precioOriginal > 0 
+        ? ((precioOriginal - precioUnitario) / precioOriginal) * 100 
+        : 0;
+      break;
+
+    case 'precio_pack':
+      // El valor_precio es el precio total del pack/bundle
+      // Para bundles, se divide entre la suma de unidades_fijas
+      // Para mínimas, se divide entre min_unidades_total
+      if (oferta.tipo === 'bundle' || oferta.tipo === 'minima') {
+        const unidadesBase = oferta.unidades_totales || oferta.min_unidades_total || cantidad;
+        precioUnitario = unidadesBase > 0 ? oferta.valor_precio / unidadesBase : precioOriginal;
+        precioTotal = precioUnitario * cantidad;
+        descuentoPct = precioOriginal > 0 
+          ? ((precioOriginal - precioUnitario) / precioOriginal) * 100 
+          : 0;
+      } else {
+        precioTotal = oferta.valor_precio || precioTotal;
+        precioUnitario = cantidad > 0 ? precioTotal / cantidad : precioOriginal;
+        descuentoPct = (precioOriginal * cantidad) > 0
+          ? (((precioOriginal * cantidad) - precioTotal) / (precioOriginal * cantidad)) * 100
+          : 0;
+      }
+      break;
+
+    case 'descuento_pct':
+      // El valor_precio es el porcentaje de descuento
+      descuentoPct = oferta.valor_precio || 0;
+      precioUnitario = precioOriginal * (1 - descuentoPct / 100);
+      precioTotal = precioUnitario * cantidad;
+      break;
+
+    default:
+      // Sin cambios
+      break;
+  }
+
+  return {
+    precioUnitario: Math.round(precioUnitario * 100) / 100,
+    precioTotal: Math.round(precioTotal * 100) / 100,
+    descuentoPct: Math.round(descuentoPct * 100) / 100
+  };
+};
+
+/**
+ * Obtener todas las ofertas con paginación
+ */
 const getOfertas = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
-    const offset = (page - 1) * limit;
+    const skip = (page - 1) * limit;
     
-    const query = `
-      SELECT 
-        id, titulo, fecha_inicio, fecha_fin,
-        precio_original, precio_oferta, id_producto,
-        activa, created_at
-      FROM ofertas 
-      ORDER BY created_at DESC
-      LIMIT ? OFFSET ?
-    `;
-    
-    const countQuery = 'SELECT COUNT(*) as total FROM ofertas';
-    
-    const [ofertas, countResult] = await Promise.all([
-      executeQuery(query, [limit, offset]),
-      executeQuery(countQuery)
+    const [ofertas, total] = await Promise.all([
+      prisma.ofertas.findMany({
+        include: {
+          ofertas_detalle: {
+            include: {
+              productos: {
+                include: {
+                  marcas: true,
+                  envases: true
+                }
+              }
+            }
+          }
+        },
+        orderBy: {
+          created_at: 'desc'
+        },
+        take: limit,
+        skip: skip
+      }),
+      prisma.ofertas.count()
     ]);
     
-    // Formatear ofertas con precios directos
+    // Formatear ofertas con productos anidados
     const ofertasFormateadas = ofertas.map(oferta => ({
-      ...oferta,
-      id_producto: oferta.id_producto || null,
-      precio_original: oferta.precio_original || 0,
-      precio_oferta: oferta.precio_oferta || 0
+      id: oferta.id,
+      titulo: oferta.titulo,
+      descripcion: oferta.descripcion,
+      fecha_inicio: oferta.fecha_inicio,
+      fecha_fin: oferta.fecha_fin,
+      tipo: oferta.tipo,
+      modo_precio: oferta.modo_precio,
+      valor_precio: parseFloat(oferta.valor_precio?.toString() || '0'),
+      min_unidades_total: oferta.min_unidades_total,
+      unidad_base: oferta.unidad_base,
+      activa: oferta.activa,
+      created_at: oferta.created_at,
+      productos: oferta.ofertas_detalle.map(detalle => ({
+        detalle_id: detalle.id,
+        producto_id: detalle.producto_id,
+        unidades_fijas: detalle.unidades_fijas,
+        codigo: detalle.productos.codigo,
+        nombre: detalle.productos.nombre,
+        precioVenta: parseFloat(detalle.productos.precioVenta.toString()),
+        marca: detalle.productos.marcas?.nombre || null,
+        envase: detalle.productos.envases?.nombre || null,
+        litros: detalle.productos.envases?.litros || null
+      }))
     }));
     
     res.json({
       success: true,
       data: ofertasFormateadas,
-      total: countResult[0].total,
+      total,
       page,
       limit
     });
@@ -44,67 +133,121 @@ const getOfertas = async (req, res) => {
     console.error('Error obteniendo ofertas:', error);
     res.status(500).json({
       success: false,
-      message: 'Error interno del servidor'
+      message: 'Error interno del servidor',
+      error: error.message
     });
   }
 };
 
-// Obtener ofertas vigentes del mes actual
+/**
+ * Obtener ofertas vigentes del mes actual
+ */
 const getOfertasVigentesMes = async (req, res) => {
   try {
-    const query = `
-      SELECT 
-        o.id, o.titulo, o.fecha_inicio, o.fecha_fin,
-        o.precio_original, o.precio_oferta, o.id_producto,
-        o.created_at,
-        p.id as producto_id,
-        p.codigo as producto_codigo,
-        p.nombre as producto_nombre,
-        p.precioVenta as producto_precio,
-        m.nombre as producto_marca,
-        e.nombre as producto_envase,
-        e.litros as producto_litros,
-        CASE 
-          WHEN p.foto IS NOT NULL THEN CONCAT('data:image/jpeg;base64,', TO_BASE64(p.foto))
-          ELSE NULL 
-        END as producto_foto
-      FROM ofertas o
-      LEFT JOIN productos p ON o.id_producto = p.id
-      LEFT JOIN marcas m ON p.marca = m.id
-      LEFT JOIN envases e ON p.envase = e.id
-      WHERE o.activa = 1 
-        AND o.fecha_inicio <= CURDATE() 
-        AND o.fecha_fin >= CURDATE()
-        AND MONTH(o.fecha_inicio) = MONTH(CURDATE())
-        AND YEAR(o.fecha_inicio) = YEAR(CURDATE())
-        AND (p.id IS NULL OR p.stockActual > 0)
-      ORDER BY o.created_at DESC
-    `;
+    const hoy = new Date();
+    const primerDiaMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+    const ultimoDiaMes = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0);
     
-    const ofertas = await executeQuery(query);
-    
-    // Formatear ofertas con precios directos
-    const ofertasFormateadas = ofertas.map(oferta => {
-      return {
-        ...oferta,
-        id_producto: oferta.id_producto || null,
-        producto_id: oferta.producto_id || null,
-        producto_codigo: oferta.producto_codigo || '',
-        producto_nombre: oferta.producto_nombre || '',
-        producto_precio: oferta.producto_precio || 0,
-        producto_precio_original: oferta.precio_original || 0,
-        producto_precio_oferta: oferta.precio_oferta || 0,
-        producto_marca: oferta.producto_marca || '',
-        producto_envase: oferta.producto_envase || '',
-        producto_litros: oferta.producto_litros || 0,
-        producto_foto: oferta.producto_foto || null
-      };
+    const ofertas = await prisma.ofertas.findMany({
+      where: {
+        activa: true,
+        fecha_inicio: { lte: hoy },
+        fecha_fin: { gte: hoy },
+        AND: [
+          { fecha_inicio: { gte: primerDiaMes } },
+          { fecha_inicio: { lte: ultimoDiaMes } }
+        ]
+      },
+      include: {
+        ofertas_detalle: {
+          include: {
+            productos: {
+              include: {
+                marcas: true,
+                envases: true
+              }
+            }
+          }
+        }
+      },
+      orderBy: {
+        created_at: 'desc'
+      }
     });
     
+    // Formatear ofertas con cálculos de precio
+    const ofertasFormateadas = ofertas.map(oferta => {
+      // Filtrar detalles que tienen productos con stock
+      const detallesConStock = oferta.ofertas_detalle.filter(
+        detalle => detalle.productos.stockActual > 0
+      );
+      
+      if (detallesConStock.length === 0) {
+        return null;
+      }
+      
+      // Calcular unidades totales para bundles
+      const unidades_totales = detallesConStock.reduce(
+        (sum, d) => sum + (d.unidades_fijas || 0), 
+        0
+      );
+      
+      // Formatear productos con fotos
+      const productos = detallesConStock.map(detalle => ({
+        detalle_id: detalle.id,
+        producto_id: detalle.producto_id,
+        unidades_fijas: detalle.unidades_fijas,
+        codigo: detalle.productos.codigo,
+        nombre: detalle.productos.nombre,
+        precioVenta: parseFloat(detalle.productos.precioVenta.toString()),
+        stockActual: detalle.productos.stockActual,
+        marca: detalle.productos.marcas?.nombre || null,
+        envase: detalle.productos.envases?.nombre || null,
+        litros: detalle.productos.envases?.litros || null,
+        foto: detalle.productos.foto 
+          ? `data:image/jpeg;base64,${detalle.productos.foto.toString('base64')}` 
+          : null
+      }));
+      
+      // Calcular precios con oferta para primer producto (referencia)
+      let precioInfo = { precioUnitario: 0, precioTotal: 0, descuentoPct: 0 };
+      if (productos.length > 0) {
+        const ofertaData = {
+          tipo: oferta.tipo,
+          modo_precio: oferta.modo_precio,
+          valor_precio: parseFloat(oferta.valor_precio?.toString() || '0'),
+          min_unidades_total: oferta.min_unidades_total,
+          unidades_totales
+        };
+        precioInfo = calcularPrecioConOferta(
+          ofertaData,
+          productos[0].precioVenta,
+          oferta.min_unidades_total || 1
+        );
+      }
+      
+      return {
+        id: oferta.id,
+        titulo: oferta.titulo,
+        descripcion: oferta.descripcion,
+        fecha_inicio: oferta.fecha_inicio,
+        fecha_fin: oferta.fecha_fin,
+        tipo: oferta.tipo,
+        modo_precio: oferta.modo_precio,
+        valor_precio: parseFloat(oferta.valor_precio?.toString() || '0'),
+        min_unidades_total: oferta.min_unidades_total,
+        unidad_base: oferta.unidad_base,
+        activa: oferta.activa,
+        created_at: oferta.created_at,
+        productos,
+        unidades_totales,
+        precio_referencia: precioInfo.precioUnitario,
+        precio_original: productos[0]?.precioVenta || 0,
+        descuento_calculado: precioInfo.descuentoPct
+      };
+    }).filter(o => o !== null); // Filtrar ofertas sin stock
+    
     console.log('Ofertas vigentes encontradas:', ofertasFormateadas.length);
-    if (ofertasFormateadas.length > 0) {
-      console.log('Primera oferta:', JSON.stringify(ofertasFormateadas[0], null, 2));
-    }
     
     res.json({
       success: true,
@@ -116,144 +259,408 @@ const getOfertasVigentesMes = async (req, res) => {
     console.error('Error obteniendo ofertas vigentes:', error);
     res.status(500).json({
       success: false,
-      message: 'Error interno del servidor'
+      message: 'Error interno del servidor',
+      error: error.message
     });
   }
 };
 
-// Obtener oferta específica
+/**
+ * Obtener oferta específica con detalle completo
+ */
 const getOferta = async (req, res) => {
   try {
     const { id } = req.params;
     
-    const query = `
-      SELECT 
-        id, titulo, fecha_inicio, fecha_fin,
-        precio_original, precio_oferta, id_producto,
-        created_at
-      FROM ofertas 
-      WHERE id = ? AND activa = 1
-    `;
+    const ofertaId = parseInt(id);
+    if (isNaN(ofertaId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID de oferta inválido'
+      });
+    }
     
-    const ofertas = await executeQuery(query, [id]);
+    const oferta = await prisma.ofertas.findFirst({
+      where: {
+        id: ofertaId,
+        activa: true
+      },
+      include: {
+        ofertas_detalle: {
+          include: {
+            productos: {
+              include: {
+                marcas: true,
+                envases: true
+              }
+            }
+          }
+        }
+      }
+    });
     
-    if (ofertas.length === 0) {
+    if (!oferta) {
       return res.status(404).json({
         success: false,
         message: 'Oferta no encontrada'
       });
     }
     
-    const oferta = ofertas[0];
-    
-    // Formatear oferta con precios directos
-    oferta.id_producto = oferta.id_producto || null;
-    oferta.precio_original = oferta.precio_original || 0;
-    oferta.precio_oferta = oferta.precio_oferta || 0;
+    // Formatear respuesta
+    const ofertaFormateada = {
+      id: oferta.id,
+      titulo: oferta.titulo,
+      descripcion: oferta.descripcion,
+      fecha_inicio: oferta.fecha_inicio,
+      fecha_fin: oferta.fecha_fin,
+      tipo: oferta.tipo,
+      modo_precio: oferta.modo_precio,
+      valor_precio: parseFloat(oferta.valor_precio?.toString() || '0'),
+      min_unidades_total: oferta.min_unidades_total,
+      unidad_base: oferta.unidad_base,
+      activa: oferta.activa,
+      created_at: oferta.created_at,
+      productos: oferta.ofertas_detalle.map(detalle => ({
+        detalle_id: detalle.id,
+        producto_id: detalle.producto_id,
+        unidades_fijas: detalle.unidades_fijas,
+        codigo: detalle.productos.codigo,
+        nombre: detalle.productos.nombre,
+        precioVenta: parseFloat(detalle.productos.precioVenta.toString()),
+        stockActual: detalle.productos.stockActual,
+        marca: detalle.productos.marcas?.nombre || null,
+        envase: detalle.productos.envases?.nombre || null,
+        litros: detalle.productos.envases?.litros || null,
+        foto: detalle.productos.foto 
+          ? `data:image/jpeg;base64,${detalle.productos.foto.toString('base64')}` 
+          : null
+      }))
+    };
     
     res.json({
       success: true,
-      data: oferta
+      data: ofertaFormateada
     });
     
   } catch (error) {
     console.error('Error obteniendo oferta:', error);
     res.status(500).json({
       success: false,
-      message: 'Error interno del servidor'
+      message: 'Error interno del servidor',
+      error: error.message
     });
   }
 };
 
-// Obtener ofertas aplicables a un producto específico
+/**
+ * Obtener ofertas aplicables a un producto específico
+ */
 const getOfertasPorProducto = async (req, res) => {
   try {
     const { producto_id } = req.params;
     
-    const query = `
-      SELECT 
-        id, titulo, fecha_inicio, fecha_fin,
-        precio_original, precio_oferta, id_producto,
-        created_at
-      FROM ofertas 
-      WHERE activa = 1 
-        AND fecha_inicio <= CURDATE() 
-        AND fecha_fin >= CURDATE()
-        AND (id_producto IS NULL OR id_producto = ?)
-      ORDER BY created_at DESC
-    `;
+    const productoId = parseInt(producto_id);
+    if (isNaN(productoId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID de producto inválido'
+      });
+    }
     
-    const ofertas = await executeQuery(query, [producto_id]);
+    const hoy = new Date();
     
-    // Formatear ofertas con precios directos
-    const ofertasFormateadas = ofertas.map(oferta => ({
-      ...oferta,
-      id_producto: oferta.id_producto || null,
-      precio_original: oferta.precio_original || 0,
-      precio_oferta: oferta.precio_oferta || 0
-    }));
+    // Buscar ofertas que contengan este producto
+    const ofertas = await prisma.ofertas.findMany({
+      where: {
+        activa: true,
+        fecha_inicio: { lte: hoy },
+        fecha_fin: { gte: hoy },
+        ofertas_detalle: {
+          some: {
+            producto_id: productoId
+          }
+        }
+      },
+      include: {
+        ofertas_detalle: {
+          where: {
+            producto_id: productoId
+          },
+          include: {
+            productos: true
+          }
+        }
+      },
+      orderBy: {
+        created_at: 'desc'
+      }
+    });
+    
+    // Calcular precios con oferta para cada una
+    const ofertasConPrecios = ofertas.map(oferta => {
+      const producto = oferta.ofertas_detalle[0]?.productos;
+      
+      if (!producto) {
+        return {
+          ...oferta,
+          precio_con_oferta: 0
+        };
+      }
+      
+      const precioOriginal = parseFloat(producto.precioVenta.toString());
+      const ofertaData = {
+        tipo: oferta.tipo,
+        modo_precio: oferta.modo_precio,
+        valor_precio: parseFloat(oferta.valor_precio?.toString() || '0'),
+        min_unidades_total: oferta.min_unidades_total
+      };
+      
+      const precioInfo = calcularPrecioConOferta(
+        ofertaData,
+        precioOriginal,
+        oferta.min_unidades_total || 1
+      );
+      
+      return {
+        id: oferta.id,
+        titulo: oferta.titulo,
+        descripcion: oferta.descripcion,
+        fecha_inicio: oferta.fecha_inicio,
+        fecha_fin: oferta.fecha_fin,
+        tipo: oferta.tipo,
+        modo_precio: oferta.modo_precio,
+        valor_precio: parseFloat(oferta.valor_precio?.toString() || '0'),
+        min_unidades_total: oferta.min_unidades_total,
+        unidad_base: oferta.unidad_base,
+        activa: oferta.activa,
+        created_at: oferta.created_at,
+        precio_original: precioOriginal,
+        precio_con_oferta: precioInfo.precioUnitario,
+        descuento_pct: precioInfo.descuentoPct
+      };
+    });
     
     res.json({
       success: true,
-      data: ofertasFormateadas,
-      total: ofertasFormateadas.length
+      data: ofertasConPrecios,
+      total: ofertasConPrecios.length
     });
     
   } catch (error) {
     console.error('Error obteniendo ofertas por producto:', error);
     res.status(500).json({
       success: false,
-      message: 'Error interno del servidor'
+      message: 'Error interno del servidor',
+      error: error.message
     });
   }
 };
 
-// Obtener ofertas destacadas para dashboard (top 3)
+/**
+ * Obtener ofertas destacadas para dashboard (top 3 con mayor descuento)
+ */
 const getOfertasDestacadas = async (req, res) => {
   try {
-    const query = `
-      SELECT 
-        o.id, o.titulo, o.fecha_inicio, o.fecha_fin,
-        o.precio_original, o.precio_oferta, o.id_producto,
-        p.nombre as producto_nombre, p.precioVenta as producto_precio, p.foto as producto_foto
-      FROM ofertas o
-      LEFT JOIN productos p ON o.id_producto = p.id
-      WHERE o.activa = 1 
-        AND o.fecha_inicio <= CURDATE() 
-        AND o.fecha_fin >= CURDATE()
-        AND MONTH(o.fecha_inicio) = MONTH(CURDATE())
-        AND YEAR(o.fecha_inicio) = YEAR(CURDATE())
-        AND (p.id IS NULL OR p.stockActual > 0)
-      ORDER BY 
-        CASE 
-          WHEN o.precio_original > 0 AND o.precio_oferta > 0 
-          THEN ((o.precio_original - o.precio_oferta) / o.precio_original) * 100
-          ELSE 0 
-        END DESC,
-        o.created_at DESC
-      LIMIT 3
-    `;
+    const hoy = new Date();
+    const primerDiaMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+    const ultimoDiaMes = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0);
     
-    const ofertas = await executeQuery(query);
+    const ofertas = await prisma.ofertas.findMany({
+      where: {
+        activa: true,
+        fecha_inicio: { lte: hoy, gte: primerDiaMes },
+        fecha_fin: { gte: hoy, lte: ultimoDiaMes }
+      },
+      include: {
+        ofertas_detalle: {
+          take: 1,
+          include: {
+            productos: {
+              where: {
+                stockActual: { gt: 0 }
+              },
+              select: {
+                id: true,
+                nombre: true,
+                precioVenta: true,
+                stockActual: true,
+                foto: true
+              }
+            }
+          }
+        }
+      },
+      orderBy: {
+        created_at: 'desc'
+      },
+      take: 5
+    });
     
-    // Formatear ofertas con precios directos
-    const ofertasFormateadas = ofertas.map(oferta => ({
-      ...oferta,
-      precio_original: oferta.precio_original || 0,
-      precio_oferta: oferta.precio_oferta || 0,
-      producto_precio: oferta.producto_precio || 0
-    }));
+    // Calcular descuentos y formatear
+    const ofertasConDescuentos = ofertas.map(oferta => {
+      const detalle = oferta.ofertas_detalle[0];
+      const producto = detalle?.productos;
+      
+      if (!producto || producto.stockActual <= 0) {
+        return null;
+      }
+      
+      const precioOriginal = parseFloat(producto.precioVenta.toString());
+      const ofertaData = {
+        tipo: oferta.tipo,
+        modo_precio: oferta.modo_precio,
+        valor_precio: parseFloat(oferta.valor_precio?.toString() || '0'),
+        min_unidades_total: oferta.min_unidades_total
+      };
+      
+      const precioInfo = calcularPrecioConOferta(
+        ofertaData,
+        precioOriginal,
+        oferta.min_unidades_total || 1
+      );
+      
+      return {
+        id: oferta.id,
+        titulo: oferta.titulo,
+        descripcion: oferta.descripcion,
+        fecha_inicio: oferta.fecha_inicio,
+        fecha_fin: oferta.fecha_fin,
+        tipo: oferta.tipo,
+        modo_precio: oferta.modo_precio,
+        valor_precio: parseFloat(oferta.valor_precio?.toString() || '0'),
+        min_unidades_total: oferta.min_unidades_total,
+        unidad_base: oferta.unidad_base,
+        activa: oferta.activa,
+        created_at: oferta.created_at,
+        producto_nombre: producto.nombre,
+        producto_foto: producto.foto 
+          ? `data:image/jpeg;base64,${producto.foto.toString('base64')}` 
+          : null,
+        precio_original: precioOriginal,
+        precio_oferta: precioInfo.precioUnitario,
+        descuento_pct: precioInfo.descuentoPct
+      };
+    }).filter(o => o !== null)
+      .sort((a, b) => b.descuento_pct - a.descuento_pct)
+      .slice(0, 3);
     
     res.json({
       success: true,
-      data: ofertasFormateadas
+      data: ofertasConDescuentos
     });
     
   } catch (error) {
     console.error('Error obteniendo ofertas destacadas:', error);
     res.status(500).json({
       success: false,
-      message: 'Error interno del servidor'
+      message: 'Error interno del servidor',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Calcular precio de producto con oferta aplicada
+ * (Endpoint auxiliar para el frontend)
+ */
+const calcularPrecio = async (req, res) => {
+  try {
+    const { oferta_id, producto_id, cantidad } = req.body;
+    
+    // Obtener oferta
+    const oferta = await prisma.ofertas.findFirst({
+      where: {
+        id: oferta_id,
+        activa: true
+      },
+      select: {
+        id: true,
+        tipo: true,
+        modo_precio: true,
+        valor_precio: true,
+        min_unidades_total: true,
+        unidad_base: true
+      }
+    });
+    
+    if (!oferta) {
+      return res.status(404).json({
+        success: false,
+        message: 'Oferta no encontrada'
+      });
+    }
+    
+    // Obtener producto
+    const producto = await prisma.productos.findUnique({
+      where: { id: producto_id },
+      select: {
+        id: true,
+        nombre: true,
+        precioVenta: true
+      }
+    });
+    
+    if (!producto) {
+      return res.status(404).json({
+        success: false,
+        message: 'Producto no encontrado'
+      });
+    }
+    
+    // Validar que el producto esté en la oferta
+    const detalle = await prisma.ofertas_detalle.findFirst({
+      where: {
+        oferta_id: oferta_id,
+        producto_id: producto_id
+      }
+    });
+    
+    if (!detalle) {
+      return res.status(400).json({
+        success: false,
+        message: 'Este producto no participa en la oferta'
+      });
+    }
+    
+    // Validar cantidad mínima si aplica
+    if (oferta.tipo === 'minima' && cantidad < oferta.min_unidades_total) {
+      return res.status(400).json({
+        success: false,
+        message: `La oferta requiere un mínimo de ${oferta.min_unidades_total} unidades`,
+        min_requerido: oferta.min_unidades_total
+      });
+    }
+    
+    // Calcular precio
+    const precioOriginal = parseFloat(producto.precioVenta.toString());
+    const ofertaData = {
+      tipo: oferta.tipo,
+      modo_precio: oferta.modo_precio,
+      valor_precio: parseFloat(oferta.valor_precio?.toString() || '0'),
+      min_unidades_total: oferta.min_unidades_total
+    };
+    
+    const precioInfo = calcularPrecioConOferta(ofertaData, precioOriginal, cantidad);
+    
+    res.json({
+      success: true,
+      data: {
+        oferta_id: oferta.id,
+        producto_id: producto.id,
+        producto_nombre: producto.nombre,
+        cantidad: cantidad,
+        precio_original: precioOriginal,
+        ...precioInfo,
+        aplica_oferta: true
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error calculando precio:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error interno del servidor',
+      error: error.message
     });
   }
 };
@@ -263,5 +670,7 @@ module.exports = {
   getOfertasVigentesMes,
   getOferta,
   getOfertasPorProducto,
-  getOfertasDestacadas
+  getOfertasDestacadas,
+  calcularPrecio,
+  calcularPrecioConOferta // Exportar para uso en otros controllers
 };

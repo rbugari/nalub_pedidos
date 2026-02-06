@@ -1,19 +1,7 @@
 <script setup>
-import { ref, onMounted, computed, defineEmits, defineProps } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import api from '../services/api'
 import { formatCurrency } from '../utils/currency'
-
-// Función para formatear capacidad
-function formatCapacidad(litros) {
-  if (!litros) return '-'
-  const num = parseFloat(litros)
-  // Si es un número entero o los decimales son .0000, mostrar solo el entero
-  if (num % 1 === 0) {
-    return `${Math.floor(num)}L`
-  }
-  // Si tiene decimales significativos, mostrar con decimales
-  return `${num}L`
-}
 
 const props = defineProps({
   modelValue: {
@@ -22,51 +10,62 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['update:modelValue', 'oferta-selected'])
+const emit = defineEmits(['update:modelValue', 'ofertas-selected'])
 
+// Estado
 const ofertas = ref([])
 const loading = ref(true)
 const error = ref(null)
-const search = ref('')
+const tipoFiltro = ref('todas')
+const detailDialog = ref(false)
 const selectedOferta = ref(null)
-const selectedMarca = ref('')
-const selectedCategoria = ref('')
-const selectedEnvase = ref('')
-const showFilters = ref(false)
+const configuracionDialog = ref(false)
+const ofertaAConfigurar = ref(null)
+
+// Configuración de productos para la oferta seleccionada
+const productosSeleccionados = ref([])
+
+// Tipos de ofertas con colores
+const tiposOfertas = {
+  unitaria: { color: 'blue', icon: 'mdi-numeric-1-circle', label: 'Unitaria' },
+  minima: { color: 'green', icon: 'mdi-greater-than-or-equal', label: 'Cantidad Mínima' },
+  bundle: { color: 'orange', icon: 'mdi-package-variant', label: 'Combo' },
+  mix: { color: 'purple', icon: 'mdi-shuffle-variant', label: 'Mix' }
+}
 
 // Computed properties para filtros
-const marcasUnicas = computed(() => {
-  const marcas = [...new Set(ofertas.value.map(o => o.producto_marca).filter(Boolean))]
-  return marcas.sort()
+const ofertasPorTipo = computed(() => {
+  const agrupadas = {
+    unitaria: [],
+    minima: [],
+    bundle: [],
+    mix: []
+  }
+  
+  ofertas.value.forEach(oferta => {
+    if (agrupadas[oferta.tipo]) {
+      agrupadas[oferta.tipo].push(oferta)
+    }
+  })
+  
+  return agrupadas
 })
 
-const categoriasUnicas = computed(() => {
-  const categorias = [...new Set(ofertas.value.map(o => o.producto_tipo_envase).filter(Boolean))]
-  return categorias.sort()
-})
-
-const envasesUnicos = computed(() => {
-  const envases = [...new Set(ofertas.value.map(o => o.producto_envase).filter(Boolean))]
-  return envases.sort()
-})
-
-// Ofertas filtradas
 const ofertasFiltradas = computed(() => {
-  let filtered = ofertas.value
-  
-  if (selectedMarca.value) {
-    filtered = filtered.filter(o => o.producto_marca === selectedMarca.value)
+  if (tipoFiltro.value === 'todas') {
+    return ofertas.value
   }
-  
-  if (selectedCategoria.value) {
-    filtered = filtered.filter(o => o.producto_tipo_envase === selectedCategoria.value)
+  return ofertas.value.filter(o => o.tipo === tipoFiltro.value)
+})
+
+const contadorTipos = computed(() => {
+  return {
+    unitaria: ofertasPorTipo.value.unitaria.length,
+    minima: ofertasPorTipo.value.minima.length,
+    bundle: ofertasPorTipo.value.bundle.length,
+    mix: ofertasPorTipo.value.mix.length,
+    todas: ofertas.value.length
   }
-  
-  if (selectedEnvase.value) {
-    filtered = filtered.filter(o => o.producto_envase === selectedEnvase.value)
-  }
-  
-  return filtered
 })
 
 const headers = [
@@ -88,24 +87,8 @@ async function loadOfertas() {
   try {
     loading.value = true
     const response = await api.get('/ofertas/vigentes-mes')
-    
-    console.log('Respuesta del servidor:', response.data)
-    
-    // Las ofertas ya vienen procesadas desde el backend con precios directos
-    ofertas.value = response.data.data.map(oferta => {
-      // Calcular descuento porcentual para mostrar usando precio_original y precio_oferta
-      let descuentoCalculado = 0
-      if (oferta.producto_precio_original > 0 && oferta.producto_precio_oferta < oferta.producto_precio_original) {
-        descuentoCalculado = Math.round(((oferta.producto_precio_original - oferta.producto_precio_oferta) / oferta.producto_precio_original) * 100)
-      }
-      
-      return {
-        ...oferta,
-        descuento_calculado: descuentoCalculado
-      }
-    })
-    
-    console.log('Ofertas procesadas:', ofertas.value)
+    console.log('Ofertas cargadas:', response.data)
+    ofertas.value = response.data.data || []
   } catch (err) {
     console.error('Error al cargar ofertas:', err)
     error.value = 'Error al cargar las ofertas'
@@ -114,45 +97,134 @@ async function loadOfertas() {
   }
 }
 
-function selectOferta(oferta) {
+function verDetalles(oferta) {
   selectedOferta.value = oferta
+  detailDialog.value = true
+}
+
+function configurarOferta(oferta) {
+  ofertaAConfigurar.value = oferta
+  productosSeleccionados.value = []
   
-  // Crear objeto producto con información de la oferta usando precios directos
-  const productoConOferta = {
-    id: oferta.id_producto,
-    codigo: oferta.producto_codigo,
-    nombre: oferta.producto_nombre,
-    marca: oferta.producto_marca,
-    envase: oferta.producto_envase,
-    precio: oferta.producto_precio_oferta, // Precio de oferta directo
-    precio_original: oferta.producto_precio_original, // Precio original
-    foto: oferta.producto_foto,
-    es_oferta: true,
-    oferta_id: oferta.id,
-    oferta_titulo: oferta.titulo,
-    descuento_porcentaje: oferta.descuento_calculado
+  // Inicializar productos según tipo de oferta
+  if (oferta.tipo === 'bundle' || oferta.tipo === 'mix') {
+    // Cargar productos con sus cantidades requeridas
+    oferta.productos.forEach(prod => {
+      productosSeleccionados.value.push({
+        id_producto: prod.producto_id,
+        nombre: prod.nombre,
+        codigo: prod.codigo,
+        envase: prod.envase,
+        cantidad: oferta.tipo === 'bundle' ? (prod.unidades_fijas || 1) : 1,
+        minimo: oferta.tipo === 'bundle' ? (prod.unidades_fijas || 1) : 0,
+        precioBase: parseFloat(prod.precioVenta || 0)
+      })
+    })
+  } else {
+    // Para unitaria y mínima, solo el producto principal
+    const producto = oferta.productos[0]
+    productosSeleccionados.value = [{
+      id_producto: producto.producto_id,
+      nombre: producto.nombre,
+      codigo: producto.codigo,
+      envase: producto.envase,
+      cantidad: oferta.tipo === 'minima' ? (oferta.min_unidades_total || 1) : 1,
+      minimo: oferta.tipo === 'minima' ? (oferta.min_unidades_total || 1) : 1,
+      precioBase: parseFloat(producto.precioVenta || 0)
+    }]
   }
   
-  emit('oferta-selected', productoConOferta)
+  configuracionDialog.value = true
+}
+
+function validarConfiguracion() {
+  const oferta = ofertaAConfigurar.value
+  
+  if (oferta.tipo === 'minima') {
+    const totalUnidades = productosSeleccionados.value.reduce((sum, p) => sum + Number(p.cantidad), 0)
+    return totalUnidades >= oferta.min_unidades_total
+  }
+  
+  if (oferta.tipo === 'bundle') {
+    // Validar que cada producto tenga la cantidad exacta requerida
+    return productosSeleccionados.value.every(p => {
+      const prodRequerido = oferta.productos.find(pr => pr.producto_id === p.id_producto)
+      return prodRequerido && Number(p.cantidad) === (prodRequerido.unidades_fijas || 1)
+    })
+  }
+  
+  if (oferta.tipo === 'mix') {
+    const totalUnidades = productosSeleccionados.value.reduce((sum, p) => sum + Number(p.cantidad), 0)
+    return totalUnidades >= oferta.min_unidades_total
+  }
+  
+  return true // unitaria siempre válida
+}
+
+function confirmarSeleccion() {
+  if (!validarConfiguracion()) {
+    error.value = 'La configuración no cumple con los requisitos de la oferta'
+    return
+  }
+  
+  // Emitir los productos con la oferta aplicada
+  const productosParaAgregar = productosSeleccionados.value.map(p => ({
+    id_producto: p.id_producto,
+    nombre: p.nombre,
+    codigo: p.codigo,
+    envase: p.envase,
+    cantidad: Number(p.cantidad),
+    precioBase: p.precioBase
+  }))
+  
+  emit('ofertas-selected', {
+    oferta_id: ofertaAConfigurar.value.id,
+    tipo: ofertaAConfigurar.value.tipo,
+    titulo: ofertaAConfigurar.value.titulo,
+    productos: productosParaAgregar
+  })
+  
   closeDialog()
 }
 
 function closeDialog() {
   emit('update:modelValue', false)
-  clearFilters()
-}
-
-function clearFilters() {
-  search.value = ''
-  selectedMarca.value = ''
-  selectedCategoria.value = ''
-  selectedEnvase.value = ''
+  configuracionDialog.value = false
+  detailDialog.value = false
   selectedOferta.value = null
-  showFilters.value = false
+  ofertaAConfigurar.value = null
+  productosSeleccionados.value = []
+  error.value = null
 }
 
-function toggleFilters() {
-  showFilters.value = !showFilters.value
+function getDescuentoTexto(oferta) {
+  if (oferta.modo_precio === 'porcentaje') {
+    return `-${oferta.valor_precio}%`
+  } else if (oferta.modo_precio === 'fijo' && oferta.productos.length > 0) {
+    const precioOriginal = oferta.productos[0].precio_base
+    const descPct = Math.round(((precioOriginal - oferta.valor_precio) / precioOriginal) * 100)
+    return `-${descPct}%`
+  } else if (oferta.modo_precio === 'descuento' && oferta.productos.length > 0) {
+    const precioOriginal = oferta.productos[0].precio_base
+    const descPct = Math.round((oferta.valor_precio / precioOriginal) * 100)
+    return `-${descPct}%`
+  }
+  return 'Precio especial'
+}
+
+function getRequisitos(oferta) {
+  switch(oferta.tipo) {
+    case 'unitaria':
+      return 'Sin mínimo de compra'
+    case 'minima':
+      return `Mínimo ${oferta.min_unidades_total} unidades`
+    case 'bundle':
+      return `Combo fijo: ${oferta.productos.length} productos`
+    case 'mix':
+      return `Elige productos, mínimo ${oferta.min_unidades_total} unidades`
+    default:
+      return ''
+  }
 }
 </script>
 
@@ -160,12 +232,13 @@ function toggleFilters() {
   <v-dialog 
     :model-value="modelValue" 
     @update:model-value="emit('update:modelValue', $event)"
-    max-width="1400px"
+    max-width="1200px"
     persistent
+    scrollable
   >
     <v-card>
-      <v-card-title class="d-flex justify-space-between align-center">
-        <span class="text-h5">Seleccionar Oferta</span>
+      <v-card-title class="d-flex justify-space-between align-center bg-gradient">
+        <span class="text-h5">🎯 Seleccionar Oferta</span>
         <v-btn
           icon="mdi-close"
           variant="text"
@@ -173,131 +246,71 @@ function toggleFilters() {
         ></v-btn>
       </v-card-title>
       
-      <v-card-text>
-        <v-alert v-if="error" type="error" class="mb-4">{{ error }}</v-alert>
+      <v-card-text class="pa-4">
+        <v-alert v-if="error" type="error" class="mb-4" closable @click:close="error = null">
+          {{ error }}
+        </v-alert>
         
-        <!-- Barra de búsqueda y filtros -->
-        <div class="search-filters-container mb-4">
-          <v-row>
-            <v-col cols="12" md="8">
-              <v-text-field
-                v-model="search"
-                append-icon="mdi-magnify"
-                label="Buscar ofertas por producto, código o marca..."
-                single-line
-                hide-details
-                clearable
-                variant="outlined"
-                density="compact"
-              ></v-text-field>
-            </v-col>
-            <v-col cols="12" md="4" class="d-flex align-center justify-end">
-              <v-btn
-                :color="showFilters ? 'primary' : 'default'"
-                :variant="showFilters ? 'flat' : 'outlined'"
-                @click="toggleFilters"
-                prepend-icon="mdi-filter-variant"
-                class="me-2"
-              >
-                Filtros
-              </v-btn>
-              <v-btn
-                variant="outlined"
-                @click="clearFilters"
-                prepend-icon="mdi-filter-remove"
-                :disabled="!search && !selectedMarca && !selectedCategoria && !selectedEnvase"
-              >
-                Limpiar
-              </v-btn>
-            </v-col>
-          </v-row>
-          
-          <!-- Panel de filtros expandible -->
-          <v-expand-transition>
-            <v-card v-show="showFilters" variant="outlined" class="mt-3 pa-3">
-              <v-row>
-                <v-col cols="12" md="4">
-                  <v-select
-                    v-model="selectedMarca"
-                    :items="marcasUnicas"
-                    label="Filtrar por marca"
-                    clearable
-                    variant="outlined"
-                    density="compact"
-                    prepend-icon="mdi-tag"
-                  ></v-select>
-                </v-col>
-                <v-col cols="12" md="4">
-                  <v-select
-                    v-model="selectedCategoria"
-                    :items="categoriasUnicas"
-                    label="Filtrar por tipo de envase"
-                    clearable
-                    variant="outlined"
-                    density="compact"
-                    prepend-icon="mdi-shape"
-                  ></v-select>
-                </v-col>
-                <v-col cols="12" md="4">
-                  <v-select
-                    v-model="selectedEnvase"
-                    :items="envasesUnicos"
-                    label="Filtrar por envase"
-                    clearable
-                    variant="outlined"
-                    density="compact"
-                    prepend-icon="mdi-package-variant"
-                  ></v-select>
-                </v-col>
-              </v-row>
-            </v-card>
-          </v-expand-transition>
-        </div>
-        
-        <v-data-table
-          :headers="headers"
-          :items="ofertasFiltradas"
-          :loading="loading"
-          :search="search"
-          loading-text="Cargando ofertas..."
-          no-data-text="No hay ofertas que coincidan con los filtros"
-          height="450px"
-          fixed-header
-          density="compact"
-          class="elevation-1 clickable-table"
-          items-per-page="10"
-          :items-per-page-options="[10, 25, 50, 100]"
+        <!-- Filtros por tipo -->
+        <v-chip-group
+          v-model="tipoFiltro"
+          selected-class="text-primary"
+          mandatory
+          class="mb-4"
         >
-          <template v-slot:item="{ item }">
-            <tr class="clickable-row" @click="selectOferta(item)">
-              <td>
-                <v-avatar size="40" class="ma-1">
-                  <v-img 
-                    v-if="item.producto_foto" 
-                    :src="item.producto_foto" 
-                    :alt="item.producto_nombre"
-                    cover
-                    class="hover-zoom"
-                  />
-                  <v-icon v-else color="grey-lighten-1" size="24">
-                    mdi-package-variant
-                  </v-icon>
-                </v-avatar>
-              </td>
-              <td>
-                <span class="font-weight-medium">{{ item.producto_codigo || 'N/A' }}</span>
-              </td>
-              <td>
-                <div class="product-name">
-                  <div class="text-body-2 font-weight-medium">{{ item.producto_nombre }}</div>
-                  <div class="text-caption text-orange-darken-2 font-weight-bold">
-                    <v-icon size="x-small" class="me-1">mdi-tag</v-icon>
-                    {{ item.titulo }}
-                  </div>
-                </div>
-              </td>
-              <td>
+          <v-chip value="todas" filter variant="outlined">
+            <v-icon start>mdi-view-grid</v-icon>
+            Todas ({{ contadorTipos.todas }})
+          </v-chip>
+          <v-chip 
+            v-for="(config, tipo) in tiposOfertas" 
+            :key="tipo"
+            :value="tipo"
+            :color="config.color"
+            filter
+            variant="outlined"
+          >
+            <v-icon start>{{ config.icon }}</v-icon>
+            {{ config.label }} ({{ contadorTipos[tipo] }})
+          </v-chip>
+        </v-chip-group>
+
+        <!-- Loading State -->
+        <div v-if="loading" class="text-center py-8">
+          <v-progress-circular indeterminate color="primary" size="64"></v-progress-circular>
+          <p class="mt-4">Cargando ofertas...</p>
+        </div>
+
+        <!-- Lista de Ofertas -->
+        <v-row v-else>
+          <v-col v-if="ofertasFiltradas.length === 0" cols="12">
+            <v-alert type="info" variant="tonal">
+              No hay ofertas disponibles para este tipo
+            </v-alert>
+          </v-col>
+          
+          <v-col 
+            v-for="oferta in ofertasFiltradas" 
+            :key="oferta.id"
+            cols="12"
+            md="6"
+            lg="4"
+          >
+            <v-card 
+              class="oferta-card h-100" 
+              :class="`border-${tiposOfertas[oferta.tipo].color}`"
+              elevation="2"
+              hover
+            >
+              <!-- Header con tipo de oferta -->
+              <v-card-title class="d-flex align-center pa-3" :class="`bg-${tiposOfertas[oferta.tipo].color}-lighten-5`">
+                <v-icon :color="tiposOfertas[oferta.tipo].color" class="mr-2">
+                  {{ tiposOfertas[oferta.tipo].icon }}
+                </v-icon>
+                <span class="text-subtitle-1">{{ tiposOfertas[oferta.tipo].label }}</span>
+                <v-spacer></v-spacer>
                 <v-chip 
+<<<<<<< HEAD
                   v-if="item.producto_marca" 
                   size="small" 
                   color="primary" 
@@ -331,102 +344,273 @@ function toggleFilters() {
               <td>
                 <v-btn
                   color="orange"
+=======
+                  :color="tiposOfertas[oferta.tipo].color" 
+>>>>>>> feature/oferta-precio-visibility
                   size="small"
                   variant="elevated"
-                  @click.stop="selectOferta(item)"
-                  prepend-icon="mdi-tag-check"
+                >
+                  {{ getDescuentoTexto(oferta) }}
+                </v-chip>
+              </v-card-title>
+
+              <!-- Contenido -->
+              <v-card-text class="pa-3">
+                <h3 class="text-h6 mb-2">{{ oferta.titulo }}</h3>
+                <p class="text-body-2 text-grey-darken-1 mb-3">{{ oferta.descripcion }}</p>
+
+                <!-- Requisitos -->
+                <v-alert 
+                  :color="tiposOfertas[oferta.tipo].color"
+                  variant="tonal"
+                  density="compact"
+                  class="mb-3"
+                >
+                  <v-icon start size="small">mdi-information</v-icon>
+                  {{ getRequisitos(oferta) }}
+                </v-alert>
+
+                <!-- Productos incluidos (preview) -->
+                <div class="productos-preview mb-2">
+                  <div class="text-caption text-grey-darken-1 mb-1 font-weight-medium">
+                    <v-icon size="x-small">mdi-package-variant</v-icon>
+                    Productos incluidos:
+                  </div>
+                  <div class="text-caption" v-for="(prod, idx) in oferta.productos" :key="`prev-${prod.producto_id}-${idx}`">
+                    • {{ prod.codigo }} - {{ prod.nombre }}
+                  </div>
+                </div>
+
+                <!-- Vigencia -->
+                <div class="text-caption text-grey">
+                  <v-icon size="x-small">mdi-calendar-range</v-icon>
+                  Hasta {{ new Date(oferta.fecha_fin).toLocaleDateString('es-AR') }}
+                </div>
+              </v-card-text>
+
+              <!-- Acciones -->
+              <v-card-actions class="pa-3 pt-0">
+                <v-btn
+                  variant="outlined"
+                  size="small"
+                  @click="verDetalles(oferta)"
+                  prepend-icon="mdi-eye"
+                >
+                  Ver detalles
+                </v-btn>
+                <v-spacer></v-spacer>
+                <v-btn
+                  :color="tiposOfertas[oferta.tipo].color"
+                  variant="elevated"
+                  size="small"
+                  @click="configurarOferta(oferta)"
+                  prepend-icon="mdi-check-circle"
                 >
                   Seleccionar
                 </v-btn>
-              </td>
-            </tr>
-          </template>
-        </v-data-table>
+              </v-card-actions>
+            </v-card>
+          </v-col>
+        </v-row>
       </v-card-text>
-      
-      <v-card-actions>
-        <v-spacer></v-spacer>
-        <v-btn
-          variant="text"
-          @click="closeDialog"
-        >
-          Cancelar
-        </v-btn>
-      </v-card-actions>
     </v-card>
+
+    <!-- Dialog de Detalles -->
+    <v-dialog v-model="detailDialog" max-width="700px">
+      <v-card v-if="selectedOferta">
+        <v-card-title class="bg-gradient">
+          <v-icon :color="tiposOfertas[selectedOferta.tipo].color" class="mr-2">
+            {{ tiposOfertas[selectedOferta.tipo].icon }}
+          </v-icon>
+          {{ selectedOferta.titulo }}
+        </v-card-title>
+        <v-card-text class="pa-4">
+          <p class="text-body-1 mb-4">{{ selectedOferta.descripcion }}</p>
+          
+          <v-divider class="my-4"></v-divider>
+          
+          <h4 class="text-h6 mb-3">Productos incluidos:</h4>
+          <v-list density="compact">
+            <v-list-item 
+              v-for="(prod, idx) in selectedOferta.productos" 
+              :key="`det-${prod.producto_id}-${idx}`"
+              class="mb-2"
+            >
+              <template v-slot:prepend>
+                <v-avatar size="40" class="mr-3">
+                  <v-img v-if="prod.foto" :src="prod.foto" cover />
+                  <v-icon v-else>mdi-package-variant</v-icon>
+                </v-avatar>
+              </template>
+              <v-list-item-title>
+                <strong>{{ prod.codigo }}</strong> - {{ prod.nombre }}
+              </v-list-item-title>
+              <v-list-item-subtitle>
+                <span v-if="selectedOferta.tipo === 'bundle'">
+                  Cantidad requerida: <strong>{{ prod.unidades_fijas }}</strong>
+                </span>
+                <span v-else>
+                  Precio base: <strong>{{ formatCurrency(prod.precioVenta) }}</strong>
+                </span>
+              </v-list-item-subtitle>
+            </v-list-item>
+          </v-list>
+          
+          <v-divider class="my-4"></v-divider>
+          
+          <v-alert :color="tiposOfertas[selectedOferta.tipo].color" variant="tonal">
+            <strong>{{ getRequisitos(selectedOferta) }}</strong>
+          </v-alert>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer></v-spacer>
+          <v-btn variant="text" @click="detailDialog = false">Cerrar</v-btn>
+          <v-btn 
+            :color="tiposOfertas[selectedOferta.tipo].color"
+            @click="detailDialog = false; configurarOferta(selectedOferta)"
+          >
+            Seleccionar esta oferta
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- Dialog de Configuración -->
+    <v-dialog v-model="configuracionDialog" max-width="800px" persistent>
+      <v-card v-if="ofertaAConfigurar">
+        <v-card-title class="bg-gradient">
+          <v-icon :color="tiposOfertas[ofertaAConfigurar.tipo].color" class="mr-2">
+            {{ tiposOfertas[ofertaAConfigurar.tipo].icon }}
+          </v-icon>
+          Configurar: {{ ofertaAConfigurar.titulo }}
+        </v-card-title>
+        
+        <v-card-text class="pa-4">
+          <v-alert 
+            :color="tiposOfertas[ofertaAConfigurar.tipo].color"
+            variant="tonal"
+            class="mb-4"
+          >
+            <strong>{{ getRequisitos(ofertaAConfigurar) }}</strong>
+          </v-alert>
+
+          <h4 class="text-h6 mb-3">Productos:</h4>
+          
+          <v-list>
+            <v-list-item 
+              v-for="(prod, idx) in productosSeleccionados" 
+              :key="`prod-${prod.id_producto}-${idx}`"
+              class="mb-3 border rounded"
+            >
+              <template v-slot:prepend>
+                <v-icon color="primary">mdi-package-variant</v-icon>
+              </template>
+              
+              <v-list-item-title class="mb-2">
+                <strong>{{ prod.codigo }}</strong> - {{ prod.nombre }}
+              </v-list-item-title>
+              
+              <v-list-item-subtitle>
+                <v-row align="center">
+                  <v-col cols="6">
+                    <v-text-field
+                      v-model.number="prod.cantidad"
+                      type="number"
+                      :min="prod.minimo || 1"
+                      label="Cantidad"
+                      density="compact"
+                      variant="outlined"
+                      :readonly="ofertaAConfigurar.tipo === 'bundle'"
+                      :hint="ofertaAConfigurar.tipo === 'bundle' ? 'Cantidad fija para este combo' : prod.minimo > 0 ? `Mínimo: ${prod.minimo}` : ''"
+                      persistent-hint
+                    ></v-text-field>
+                  </v-col>
+                  <v-col cols="6" class="text-right">
+                    <div class="text-caption text-grey">Precio base</div>
+                    <div class="text-h6">{{ formatCurrency(prod.precioBase) }}</div>
+                  </v-col>
+                </v-row>
+              </v-list-item-subtitle>
+            </v-list-item>
+          </v-list>
+
+          <!-- Resumen de cantidades para ofertas con mínimo -->
+          <v-alert 
+            v-if="ofertaAConfigurar.tipo === 'minima' || ofertaAConfigurar.tipo === 'mix'"
+            :color="validarConfiguracion() ? 'success' : 'warning'"
+            variant="tonal"
+            class="mt-4"
+          >
+            <div class="d-flex align-center">
+              <v-icon start>{{ validarConfiguracion() ? 'mdi-check-circle' : 'mdi-alert-circle' }}</v-icon>
+              <div>
+                <strong>Total de unidades: {{ productosSeleccionados.reduce((sum, p) => sum + Number(p.cantidad), 0) }}</strong>
+                <div class="text-caption">
+                  {{ validarConfiguracion() 
+                    ? '✓ Cumple con el mínimo requerido' 
+                    : `Necesitas al menos ${ofertaAConfigurar.min_unidades_total} unidades` 
+                  }}
+                </div>
+              </div>
+            </div>
+          </v-alert>
+        </v-card-text>
+        
+        <v-card-actions class="pa-4">
+          <v-btn 
+            variant="text" 
+            @click="configuracionDialog = false"
+          >
+            Cancelar
+          </v-btn>
+          <v-spacer></v-spacer>
+          <v-btn
+            :color="tiposOfertas[ofertaAConfigurar.tipo].color"
+            :disabled="!validarConfiguracion()"
+            @click="confirmarSeleccion"
+            prepend-icon="mdi-check"
+          >
+            Agregar al prepedido
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </v-dialog>
 </template>
 
 <style scoped>
-.v-data-table {
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  border-radius: 8px;
-}
-
-.search-filters-container {
-  background: rgba(255, 152, 0, 0.05);
-  border-radius: 8px;
-  padding: 12px;
-  border: 1px solid rgba(255, 152, 0, 0.2);
-}
-
-.product-image {
-  transition: transform 0.2s ease;
-}
-
-.product-image:hover {
-  transform: scale(1.1);
-}
-
-.product-name {
-  max-width: 200px;
-}
-
-.v-card-title {
-  background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%);
+.bg-gradient {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
 }
 
-.v-card-title .v-btn {
-  color: white;
+.oferta-card {
+  transition: all 0.3s ease;
+  border: 2px solid transparent;
 }
 
-.v-data-table :deep(.v-data-table__wrapper) {
-  border-radius: 8px;
+.oferta-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.15) !important;
 }
 
-.v-data-table :deep(th) {
-  background-color: #fff3e0;
-  font-weight: 600;
+.border-blue { border-color: #2196F3 !important; }
+.border-green { border-color: #4CAF50 !important; }
+.border-orange { border-color: #FF9800 !important; }
+.border-purple { border-color: #9C27B0 !important; }
+
+.bg-blue-lighten-5 { background-color: #E3F2FD; }
+.bg-green-lighten-5 { background-color: #E8F5E9; }
+.bg-orange-lighten-5 { background-color: #FFF3E0; }
+.bg-purple-lighten-5 { background-color: #F3E5F5; }
+
+.productos-preview {
+  min-height: 50px;
+  max-height: 120px;
+  overflow-y: auto;
 }
 
-.v-data-table :deep(tr:hover) {
-  background-color: rgba(255, 152, 0, 0.04);
-}
-
-.v-chip {
-  font-weight: 500;
-}
-
-.text-success {
-  color: #4caf50 !important;
-}
-
-/* Estilos para filas clickeables */
-.clickable-row {
-  cursor: pointer;
-  transition: background-color 0.2s ease;
-}
-
-.clickable-row:hover {
-  background-color: rgba(255, 152, 0, 0.08) !important;
-}
-
-.clickable-table :deep(.v-data-table__wrapper tbody tr) {
-  cursor: pointer;
-}
-
-.clickable-table :deep(.v-data-table__wrapper tbody tr:hover) {
-  background-color: rgba(255, 152, 0, 0.08) !important;
+.productos-preview .text-caption {
+  line-height: 1.6;
 }
 </style>
