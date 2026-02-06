@@ -1,4 +1,4 @@
-const { executeQuery } = require('../config/database');
+const prisma = require('../lib/prisma');
 
 // Obtener perfil del usuario
 const getProfile = async (req, res) => {
@@ -28,20 +28,27 @@ const getProfile = async (req, res) => {
       });
     }
     
-    const query = `
-      SELECT id, nombre, email, usuario, deuda, fechaUltimoPago, cuit, porcentaje1, porcentaje2, porcentaje3
-      FROM clientes 
-      WHERE id = ?
-    `;
+    console.log('🔍 Executing Prisma query for user:', userId);
     
-    console.log('🔍 Executing query:', query, 'with params:', [userId]);
+    const user = await prisma.clientes.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        nombre: true,
+        email: true,
+        usuario: true,
+        deuda: true,
+        fechaUltimoPago: true,
+        cuit: true,
+        porcentaje1: true,
+        porcentaje2: true,
+        porcentaje3: true
+      }
+    });
     
-    const users = await executeQuery(query, [userId]);
+    console.log('🔍 Query result:', user);
     
-    console.log('🔍 Query results:', users);
-    console.log('🔍 Number of users found:', users.length);
-    
-    if (users.length === 0) {
+    if (!user) {
       console.error('❌ ERROR CRÍTICO: No user found with ID:', userId);
       console.error('❌ Esto indica un problema de sincronización entre token JWT y BD');
       return res.status(404).json({
@@ -50,20 +57,7 @@ const getProfile = async (req, res) => {
       });
     }
     
-    const user = users[0];
-    
     console.log('🔍 User data from DB:', user);
-    
-    // Validar que el ID del usuario de la BD coincide con el del token
-    if (user.id !== userId) {
-      console.error('❌ ERROR CRÍTICO: ID mismatch en getProfile');
-      console.error('❌ Token userId:', userId);
-      console.error('❌ BD userId:', user.id);
-      return res.status(500).json({
-        success: false,
-        message: 'Error de consistencia de datos'
-      });
-    }
     
     // Calcular días de deuda
     let diasDeuda = 0;
@@ -80,7 +74,7 @@ const getProfile = async (req, res) => {
       usuario: user.usuario,
       telefono: '', // Campo vacío ya que no existe en la tabla
       direccion: '', // Campo vacío ya que no existe en la tabla
-      deuda: user.deuda || 0,
+      deuda: parseFloat(user.deuda.toString()) || 0,
       diasDeuda,
       fechaUltimoPago: user.fechaUltimoPago,
       cuit: user.cuit || '',
@@ -153,60 +147,41 @@ const updateProfile = async (req, res) => {
       }
     }
     
-    // Construir query dinámicamente solo con campos que se van a actualizar
-    const fieldsToUpdate = [];
-    const values = [];
+    // Construir objeto de actualización
+    const updateData = {};
     
     if (cuit !== undefined) {
-      fieldsToUpdate.push('cuit = ?');
-      values.push(cuit || null);
+      updateData.cuit = cuit || null;
     }
     
     if (porcentaje1 !== undefined) {
-      fieldsToUpdate.push('porcentaje1 = ?');
-      values.push(porcentaje1 === '' ? null : Number(porcentaje1));
+      updateData.porcentaje1 = porcentaje1 === '' ? null : Number(porcentaje1);
     }
     
     if (porcentaje2 !== undefined) {
-      fieldsToUpdate.push('porcentaje2 = ?');
-      values.push(porcentaje2 === '' ? null : Number(porcentaje2));
+      updateData.porcentaje2 = porcentaje2 === '' ? null : Number(porcentaje2);
     }
     
     if (porcentaje3 !== undefined) {
-      fieldsToUpdate.push('porcentaje3 = ?');
-      values.push(porcentaje3 === '' ? null : Number(porcentaje3));
+      updateData.porcentaje3 = porcentaje3 === '' ? null : Number(porcentaje3);
     }
     
-    if (fieldsToUpdate.length === 0) {
+    if (Object.keys(updateData).length === 0) {
       return res.status(400).json({
         success: false,
         message: 'No hay campos para actualizar'
       });
     }
     
-    values.push(userId); // Para el WHERE
+    console.log('🔍 Executing Prisma update with data:', updateData);
     
-    const query = `
-      UPDATE clientes 
-      SET ${fieldsToUpdate.join(', ')}
-      WHERE id = ?
-    `;
-    
-    console.log('🔍 Executing update query:', query);
-    console.log('🔍 With values:', values);
-    
-    const result = await executeQuery(query, values);
+    const result = await prisma.clientes.update({
+      where: { id: userId },
+      data: updateData,
+      select: { id: true }
+    });
     
     console.log('🔍 Update result:', result);
-    
-    if (result.affectedRows === 0) {
-      console.error('❌ ERROR: No se actualizó ningún registro');
-      return res.status(404).json({
-        success: false,
-        message: 'Usuario no encontrado'
-      });
-    }
-    
     console.log('=== FIN updateProfile - SUCCESS ===');
     
     res.json({
@@ -216,6 +191,16 @@ const updateProfile = async (req, res) => {
     
   } catch (error) {
     console.error('=== ERROR EN updateProfile ===');
+    
+    // Manejar error de registro no encontrado
+    if (error.code === 'P2025') {
+      console.error('❌ ERROR: Usuario no encontrado');
+      return res.status(404).json({
+        success: false,
+        message: 'Usuario no encontrado'
+      });
+    }
+    
     console.error('❌ Error completo:', error);
     console.error('❌ Error message:', error.message);
     console.error('❌ Error stack:', error.stack);
@@ -235,22 +220,20 @@ const getDebt = async (req, res) => {
     
     console.log('🔍 getDebt called for user ID:', userId);
     
-    const query = `
-      SELECT deuda, fechaUltimoPago
-      FROM clientes 
-      WHERE id = ?
-    `;
+    const user = await prisma.clientes.findUnique({
+      where: { id: userId },
+      select: {
+        deuda: true,
+        fechaUltimoPago: true
+      }
+    });
     
-    const users = await executeQuery(query, [userId]);
-    
-    if (users.length === 0) {
+    if (!user) {
       return res.status(404).json({
         success: false,
         message: 'Usuario no encontrado'
       });
     }
-    
-    const user = users[0];
     
     // Calcular días de deuda
     let diasDeuda = 0;
@@ -263,7 +246,7 @@ const getDebt = async (req, res) => {
     res.json({
       success: true,
       data: {
-        deuda: user.deuda || 0,
+        deuda: parseFloat(user.deuda.toString()) || 0,
         diasDeuda,
         fechaUltimoPago: user.fechaUltimoPago
       }

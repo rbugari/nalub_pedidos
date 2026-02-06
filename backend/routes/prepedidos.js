@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const { authenticateToken } = require('../middleware/auth');
-const { validatePrepedido } = require('../middleware/validation');
+const { validateRequest, validateId } = require('../middleware/validateRequest');
+const { createPrepedidoSchema, updatePrepedidoSchema } = require('../schemas/validation');
 const {
   createPrepedido,
   getPrepedidos,
@@ -11,22 +12,22 @@ const {
   deletePrepedido
 } = require('../controllers/prepedidoController');
 
-// POST /api/prepedidos
-router.post('/', authenticateToken, validatePrepedido, createPrepedido);
+// POST /api/prepedidos - Validación Zod
+router.post('/', authenticateToken, validateRequest(createPrepedidoSchema), createPrepedido);
 
 // GET /api/prepedidos
 router.get('/', authenticateToken, getPrepedidos);
 
-// GET /api/prepedidos/:id
-router.get('/:id', authenticateToken, getPrepedido);
+// GET /api/prepedidos/:id - Validación de ID numérico
+router.get('/:id', authenticateToken, validateId('id'), getPrepedido);
 
-// PUT /api/prepedidos/:id
-router.put('/:id', authenticateToken, validatePrepedido, updatePrepedido);
+// PUT /api/prepedidos/:id - Validación Zod + ID
+router.put('/:id', authenticateToken, validateId('id'), validateRequest(updatePrepedidoSchema), updatePrepedido);
 
-// PUT /api/prepedidos/:id/enviar
-router.put('/:id/enviar', authenticateToken, enviarPrepedido);
+// PUT /api/prepedidos/:id/enviar - Validación ID
+router.put('/:id/enviar', authenticateToken, validateId('id'), enviarPrepedido);
 
-// DELETE /api/prepedidos/:id
-router.delete('/:id', authenticateToken, deletePrepedido);
+// DELETE /api/prepedidos/:id - Validación ID
+router.delete('/:id', authenticateToken, validateId('id'), deletePrepedido);
 
 module.exports = router;

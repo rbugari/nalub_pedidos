@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const compression = require('compression');
 const { testConnection } = require('./config/database');
 require('dotenv').config();
 
@@ -9,6 +10,9 @@ const app = express();
 
 // Trust proxy for Railway deployment
 app.set('trust proxy', true);
+
+// Compression middleware (before other middleware)
+app.use(compression());
 
 // Security middleware
 app.use(helmet());
@@ -41,6 +45,16 @@ const limiter = rateLimit({
     message: 'Too many requests from this IP, please try again later.'
 });
 app.use('/api/', limiter);
+
+// Stricter rate limiting for authentication endpoints
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 5, // limit each IP to 5 login attempts per 15 minutes
+    message: 'Too many login attempts from this IP, please try again after 15 minutes.',
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+app.use('/api/auth/login', authLimiter);
 
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));

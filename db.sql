@@ -47,8 +47,8 @@ CREATE TABLE IF NOT EXISTS `aplicapagos` (
 
 -- La exportación de datos fue deseleccionada.
 
--- Volcando estructura para tabla u136155607_nalubnew.catclientes
-CREATE TABLE IF NOT EXISTS `catclientes` (
+-- Volcando estructura para tabla u136155607_nalubnew.CatClientes
+CREATE TABLE IF NOT EXISTS `CatClientes` (
   `CatCodigo` char(3) NOT NULL,
   `CatNombre` varchar(50) NOT NULL,
   PRIMARY KEY (`CatCodigo`)
@@ -106,9 +106,9 @@ CREATE TABLE IF NOT EXISTS `clientes` (
   KEY `tipoIva` (`tipoIva`),
   KEY `vendedor` (`vendedor`),
   KEY `clientes_ibfk_3` (`CatCliente`) USING BTREE,
-  CONSTRAINT `clientes_ibfk_1` FOREIGN KEY (`tipoIva`) REFERENCES `tipoiva` (`id`) ON DELETE NO ACTION,
+  CONSTRAINT `clientes_ibfk_1` FOREIGN KEY (`tipoIva`) REFERENCES `tipoIva` (`id`) ON DELETE NO ACTION,
   CONSTRAINT `clientes_ibfk_2` FOREIGN KEY (`vendedor`) REFERENCES `vendedores` (`id`) ON DELETE NO ACTION,
-  CONSTRAINT `clientes_ibfk_3` FOREIGN KEY (`CatCliente`) REFERENCES `catclientes` (`CatCodigo`) ON DELETE NO ACTION ON UPDATE NO ACTION
+  CONSTRAINT `clientes_ibfk_3` FOREIGN KEY (`CatCliente`) REFERENCES `CatClientes` (`CatCodigo`) ON DELETE NO ACTION ON UPDATE NO ACTION
 ) ENGINE=InnoDB AUTO_INCREMENT=1782 DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci;
 
 -- La exportación de datos fue deseleccionada.
@@ -144,8 +144,8 @@ CREATE TABLE IF NOT EXISTS `envases` (
 
 -- La exportación de datos fue deseleccionada.
 
--- Volcando estructura para tabla u136155607_nalubnew.ingstock
-CREATE TABLE IF NOT EXISTS `ingstock` (
+-- Volcando estructura para tabla u136155607_nalubnew.ingStock
+CREATE TABLE IF NOT EXISTS `ingStock` (
   `IngStockId` int(11) NOT NULL AUTO_INCREMENT,
   `ProveedorId` int(11) NOT NULL,
   `NroComprobante` varchar(30) NOT NULL,
@@ -154,12 +154,12 @@ CREATE TABLE IF NOT EXISTS `ingstock` (
   `IngStockUnidades` int(11) NOT NULL,
   PRIMARY KEY (`IngStockId`),
   KEY `ProveedorId` (`ProveedorId`)
-) ENGINE=InnoDB AUTO_INCREMENT=946 DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=949 DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci;
 
 -- La exportación de datos fue deseleccionada.
 
--- Volcando estructura para tabla u136155607_nalubnew.ingstockitems
-CREATE TABLE IF NOT EXISTS `ingstockitems` (
+-- Volcando estructura para tabla u136155607_nalubnew.ingStockItems
+CREATE TABLE IF NOT EXISTS `ingStockItems` (
   `IngStockItemsId` int(11) NOT NULL AUTO_INCREMENT,
   `IngStockId` int(11) NOT NULL,
   `ProductoId` int(11) NOT NULL,
@@ -208,32 +208,54 @@ CREATE TABLE IF NOT EXISTS `marcas` (
 CREATE TABLE IF NOT EXISTS `ofertas` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `titulo` varchar(255) NOT NULL,
+  `descripcion` text DEFAULT NULL,
   `fecha_inicio` date NOT NULL,
   `fecha_fin` date NOT NULL,
-  `precio_original` decimal(10,2) DEFAULT NULL,
-  `precio_oferta` decimal(12,2) DEFAULT NULL,
-  `activa` tinyint(1) DEFAULT 1,
+  `activa` tinyint(1) NOT NULL DEFAULT 1,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
-  `id_producto` int(11) DEFAULT NULL,
+  `tipo` enum('unitaria','bundle','minima','mix') NOT NULL DEFAULT 'unitaria',
+  `modo_precio` enum('precio_unitario','precio_pack','descuento_pct') NOT NULL DEFAULT 'precio_unitario',
+  `valor_precio` decimal(12,2) DEFAULT NULL,
+  `min_unidades_total` int(11) DEFAULT NULL,
+  `unidad_base` enum('unidad','caja') DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `idx_fechas_activa` (`fecha_inicio`,`fecha_fin`,`activa`),
-  KEY `idx_activa_descuento` (`activa`)
-) ENGINE=InnoDB AUTO_INCREMENT=72 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+  KEY `idx_activa_tipo` (`activa`,`tipo`),
+  CONSTRAINT `chk_ofertas_fechas` CHECK (`fecha_fin` >= `fecha_inicio`)
+) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- La exportación de datos fue deseleccionada.
 
 -- Volcando estructura para tabla u136155607_nalubnew.ofertas_backup
 CREATE TABLE IF NOT EXISTS `ofertas_backup` (
-  `id` int(11) NOT NULL DEFAULT 0,
-  `titulo` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  `id` int(11) NOT NULL,
+  `titulo` varchar(255) NOT NULL,
+  `descripcion` text DEFAULT NULL,
   `fecha_inicio` date NOT NULL,
   `fecha_fin` date NOT NULL,
-  `precio_original` decimal(10,2) DEFAULT NULL,
-  `precio_oferta` decimal(12,2) DEFAULT NULL,
-  `activa` tinyint(1) DEFAULT 1,
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
-  `id_producto` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `activa` tinyint(1) NOT NULL,
+  `created_at` timestamp NOT NULL,
+  `tipo` enum('unitaria','bundle','minima','mix') NOT NULL,
+  `modo_precio` enum('precio_unitario','precio_pack','descuento_pct') NOT NULL,
+  `valor_precio` decimal(12,2) DEFAULT NULL,
+  `min_unidades_total` int(11) DEFAULT NULL,
+  `unidad_base` enum('unidad','caja') DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- La exportación de datos fue deseleccionada.
+
+-- Volcando estructura para tabla u136155607_nalubnew.ofertas_detalle
+CREATE TABLE IF NOT EXISTS `ofertas_detalle` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `oferta_id` int(11) NOT NULL,
+  `producto_id` int(11) NOT NULL,
+  `unidades_fijas` int(11) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_oferta` (`oferta_id`),
+  KEY `idx_producto` (`producto_id`),
+  CONSTRAINT `fk_ofertas_detalle_oferta` FOREIGN KEY (`oferta_id`) REFERENCES `ofertas` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_ofertas_detalle_producto` FOREIGN KEY (`producto_id`) REFERENCES `productos` (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- La exportación de datos fue deseleccionada.
 
@@ -265,7 +287,7 @@ CREATE TABLE IF NOT EXISTS `pagos` (
   KEY `tipoMedioPagoId` (`tipoMedioPagoId`),
   KEY `receptor` (`receptor`),
   CONSTRAINT `pagos_ibfk_1` FOREIGN KEY (`clienteId`) REFERENCES `clientes` (`id`) ON DELETE NO ACTION,
-  CONSTRAINT `pagos_ibfk_2` FOREIGN KEY (`tipoMedioPagoId`) REFERENCES `tipomediospago` (`id`) ON DELETE NO ACTION,
+  CONSTRAINT `pagos_ibfk_2` FOREIGN KEY (`tipoMedioPagoId`) REFERENCES `tipoMediosPago` (`id`) ON DELETE NO ACTION,
   CONSTRAINT `pagos_ibfk_3` FOREIGN KEY (`receptor`) REFERENCES `sec_users` (`login`) ON DELETE NO ACTION
 ) ENGINE=InnoDB AUTO_INCREMENT=43822 DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci;
 
@@ -317,7 +339,7 @@ CREATE TABLE IF NOT EXISTS `pedidoItems` (
   KEY `pedidoId` (`pedidoId`),
   CONSTRAINT `pedidoItems_ibfk_1` FOREIGN KEY (`productoId`) REFERENCES `productos` (`id`),
   CONSTRAINT `pedidoItems_ibfk_2` FOREIGN KEY (`pedidoId`) REFERENCES `pedidos` (`id`) ON DELETE NO ACTION
-) ENGINE=InnoDB AUTO_INCREMENT=45048 DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=45053 DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci;
 
 -- La exportación de datos fue deseleccionada.
 
@@ -340,7 +362,7 @@ CREATE TABLE IF NOT EXISTS `pedidos` (
   KEY `login` (`login`),
   CONSTRAINT `pedidos_ibfk_1` FOREIGN KEY (`cliente`) REFERENCES `clientes` (`id`) ON DELETE NO ACTION,
   CONSTRAINT `pedidos_ibfk_2` FOREIGN KEY (`login`) REFERENCES `sec_users` (`login`)
-) ENGINE=InnoDB AUTO_INCREMENT=20577 DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=20580 DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci;
 
 -- La exportación de datos fue deseleccionada.
 
@@ -356,7 +378,7 @@ CREATE TABLE IF NOT EXISTS `prepedidos_cabecera` (
   KEY `idx_cliente_estado` (`cliente_id`,`estado`),
   KEY `idx_fecha_creacion` (`fecha_creacion`),
   CONSTRAINT `prepedidos_cabecera_ibfk_1` FOREIGN KEY (`cliente_id`) REFERENCES `clientes` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=16 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=17 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- La exportación de datos fue deseleccionada.
 
@@ -379,7 +401,7 @@ CREATE TABLE IF NOT EXISTS `prepedidos_items` (
   KEY `idx_ofertaid` (`ofertaid`),
   CONSTRAINT `prepedidos_items_ibfk_1` FOREIGN KEY (`prepedido_id`) REFERENCES `prepedidos_cabecera` (`id`) ON DELETE CASCADE,
   CONSTRAINT `prepedidos_items_ibfk_2` FOREIGN KEY (`producto_id`) REFERENCES `productos` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=93 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=98 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- La exportación de datos fue deseleccionada.
 
@@ -528,8 +550,8 @@ CREATE TABLE IF NOT EXISTS `tipoEnvase` (
 
 -- La exportación de datos fue deseleccionada.
 
--- Volcando estructura para tabla u136155607_nalubnew.tipoiva
-CREATE TABLE IF NOT EXISTS `tipoiva` (
+-- Volcando estructura para tabla u136155607_nalubnew.tipoIva
+CREATE TABLE IF NOT EXISTS `tipoIva` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `nombre` varchar(100) NOT NULL,
   `tasa` decimal(10,2) NOT NULL,
@@ -539,8 +561,8 @@ CREATE TABLE IF NOT EXISTS `tipoiva` (
 
 -- La exportación de datos fue deseleccionada.
 
--- Volcando estructura para tabla u136155607_nalubnew.tipomediospago
-CREATE TABLE IF NOT EXISTS `tipomediospago` (
+-- Volcando estructura para tabla u136155607_nalubnew.tipoMediosPago
+CREATE TABLE IF NOT EXISTS `tipoMediosPago` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `nombre` varchar(100) NOT NULL,
   `datosAdic` char(1) NOT NULL,

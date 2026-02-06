@@ -1,12 +1,15 @@
 const express = require('express');
 const router = express.Router();
 const { authenticateToken } = require('../middleware/auth');
+const { validateRequest, validateId } = require('../middleware/validateRequest');
+const { calcularPrecioOfertaSchema } = require('../schemas/validation');
 const {
   getOfertas,
   getOfertasVigentesMes,
   getOferta,
   getOfertasPorProducto,
-  getOfertasDestacadas
+  getOfertasDestacadas,
+  calcularPrecio
 } = require('../controllers/ofertasController');
 
 // GET /api/ofertas (base route for all offers)
@@ -19,9 +22,12 @@ router.get('/vigentes-mes', getOfertasVigentesMes);
 router.get('/destacadas', authenticateToken, getOfertasDestacadas);
 
 // GET /api/ofertas/por-producto/:producto_id
-router.get('/por-producto/:producto_id', authenticateToken, getOfertasPorProducto);
+router.get('/por-producto/:producto_id', authenticateToken, validateId('producto_id'), getOfertasPorProducto);
+
+// POST /api/ofertas/calcular-precio
+router.post('/calcular-precio', authenticateToken, validateRequest(calcularPrecioOfertaSchema), calcularPrecio);
 
 // GET /api/ofertas/:id
-router.get('/:id', authenticateToken, getOferta);
+router.get('/:id', authenticateToken, validateId('id'), getOferta);
 
 module.exports = router;

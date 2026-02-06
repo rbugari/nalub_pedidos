@@ -1,4 +1,4 @@
-const { executeQuery } = require('../config/database');
+const prisma = require('../lib/prisma');
 
 const pagosController = {
   /**
@@ -17,24 +17,54 @@ const pagosController = {
         });
       }
 
-      const query = `
-        SELECT 
-          p.fechaRecep AS fecha, 
-          t.nombre AS medio_pago, 
-          p.importe, 
-          p.receptor 
-        FROM pagos p 
-        INNER JOIN tipomediospago t ON p.tipoMedioPagoId = t.id 
-        WHERE p.clienteId = ? 
-        ORDER BY p.fechaRecep DESC, p.id DESC 
-        LIMIT 5
-      `;
+      const pagos = await prisma.pagos.findMany({
+        where: {
+          clienteId: clienteId
+        },
+        select: {
+          fechaRecep: true,
+          tipoMedioPagoId: true,
+          importe: true,
+          receptor: true
+        },
+        orderBy: [
+          { fechaRecep: 'desc' },
+          { id: 'desc' }
+        ],
+        take: 5
+      });
 
-      const rows = await executeQuery(query, [clienteId]);
+      // Formatear datos con nombre de medio de pago
+      const pagosFormateados = pagos.map(pago => {
+        let medioPago = '';
+        switch (pago.tipoMedioPagoId) {
+          case 1:
+            medioPago = 'Efectivo';
+            break;
+          case 2:
+            medioPago = 'Transferencia';
+            break;
+          case 3:
+            medioPago = 'Cheque';
+            break;
+          case 4:
+            medioPago = 'Tarjeta';
+            break;
+          default:
+            medioPago = `Medio Pago #${pago.tipoMedioPagoId}`;
+        }
+        
+        return {
+          fecha: pago.fechaRecep,
+          medio_pago: medioPago,
+          importe: parseFloat(pago.importe.toString()),
+          receptor: pago.receptor
+        };
+      });
 
       res.json({
         success: true,
-        data: rows,
+        data: pagosFormateados,
         message: 'Pagos obtenidos exitosamente'
       });
 

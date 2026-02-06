@@ -1,69 +1,76 @@
-const { executeQuery } = require('../config/database');
+const prisma = require('../lib/prisma');
 
-// Obtener todos los productos con paginación
+// Obtener todos los productos con paginación - Prisma
 const getProductos = async (req, res) => {
   try {
     const { limite = 1000, pagina = 1 } = req.query;
-    const offset = (pagina - 1) * limite;
-    
-    // Obtener ID del cliente autenticado desde el token JWT
     const clienteId = req.user?.id;
     
-    console.log('🔍 DEBUG getProductos - clienteId:', clienteId);
-    console.log('🔍 DEBUG getProductos - req.user:', req.user);
+    console.log('🔍 getProductos - clienteId:', clienteId);
     
-    const query = `
-      SELECT 
-        p.id, p.codigo, p.nombre, 
-        p.precioVenta as precioBase,
-        ROUND(p.precioVenta * (1 + COALESCE(c.porcentaje1, 0) / 100), 2) as precio1,
-        ROUND(p.precioVenta * (1 + COALESCE(c.porcentaje2, 0) / 100), 2) as precio2,
-        ROUND(p.precioVenta * (1 + COALESCE(c.porcentaje3, 0) / 100), 2) as precio3,
-        m.nombre as marca,
-        e.nombre as envase, e.litros,
-        te.nombre as tipo_envase,
-        CASE 
-          WHEN p.foto IS NOT NULL THEN CONCAT('data:image/jpeg;base64,', TO_BASE64(p.foto))
-          ELSE NULL 
-        END as foto,
-        o.precio_oferta,
-        o.precio_original,
-        CASE 
-          WHEN o.id IS NOT NULL THEN 1
-          ELSE 0
-        END as en_oferta,
-        c.porcentaje1,
-        c.porcentaje2,
-        c.porcentaje3
-      FROM productos p
-      LEFT JOIN marcas m ON p.marca = m.id
-      LEFT JOIN envases e ON p.envase = e.id
-      LEFT JOIN tipoEnvase te ON e.tipoenvaseid = te.id
-      LEFT JOIN ofertas o ON p.id = o.id_producto 
-        AND o.activa = 1 
-        AND o.fecha_inicio <= CURDATE() 
-        AND o.fecha_fin >= CURDATE()
-      LEFT JOIN clientes c ON c.id = ?
-      WHERE p.stockActual > 0 AND p.precioVenta > 0
-      ORDER BY p.nombre
-    `;
+    // Obtener cliente para sus porcentajes
+    const cliente = await prisma.clientes.findUnique({
+      where: { id: clienteId },
+      select: {
+        porcentaje1: true,
+        porcentaje2: true,
+        porcentaje3: true
+      }
+    });
     
-    console.log('🔍 DEBUG getProductos - Ejecutando query con parámetros:', [clienteId]);
+    // Obtener productos con relaciones
+    const productos = await prisma.productos.findMany({
+      where: {
+        stockActual: { gt: 0 },
+        precioVenta: { gt: 0 }
+      },
+      include: {
+        marcas: {
+          select: { nombre: true }
+        },
+        envases: {
+          select: {
+            nombre: true,
+            litros: true,
+            tipoEnvase: {
+              select: { nombre: true }
+            }
+          }
+        }
+      },
+      orderBy: { nombre: 'asc' }
+    });
     
-    const productos = await executeQuery(query, [clienteId]);
+    // Transformar datos y calcular precios
+    const data = productos.map(p => ({
+      id: p.id,
+      codigo: p.codigo,
+      nombre: p.nombre,
+      precioBase: p.precioVenta,
+      precioVenta: p.precioVenta,
+      stockActual: p.stockActual,
+      precio1: Math.round((p.precioVenta * (1 + (cliente?.porcentaje1 || 0) / 100)) * 100) / 100,
+      precio2: Math.round((p.precioVenta * (1 + (cliente?.porcentaje2 || 0) / 100)) * 100) / 100,
+      precio3: Math.round((p.precioVenta * (1 + (cliente?.porcentaje3 || 0) / 100)) * 100) / 100,
+      marca: p.marcas?.nombre || null,
+      envase: p.envases?.nombre || null,
+      litros: p.envases?.litros || null,
+      tipo_envase: p.envases?.tipoEnvase?.nombre || null,
+      foto: p.foto ? `data:image/jpeg;base64,${p.foto.toString('base64')}` : null,
+      porcentaje1: cliente?.porcentaje1 || 0,
+      porcentaje2: cliente?.porcentaje2 || 0,
+      porcentaje3: cliente?.porcentaje3 || 0
+    }));
     
-    console.log('🔍 DEBUG getProductos - Productos encontrados:', productos.length);
-    if (productos.length > 0) {
-      console.log('🔍 DEBUG getProductos - Primer producto:', JSON.stringify(productos[0], null, 2));
-    }
+    console.log('🔍 getProductos - Productos encontrados:', data.length);
     
     res.json({
       success: true,
-      data: productos,
+      data,
       pagination: {
         pagina: 1,
-        limite: productos.length,
-        total: productos.length
+        limite: data.length,
+        total: data.length
       }
     });
     
@@ -76,7 +83,7 @@ const getProductos = async (req, res) => {
   }
 };
 
-// Buscar productos con filtros
+// Buscar productos con filtros - Prisma
 const searchProductos = async (req, res) => {
   try {
     const { 
@@ -87,74 +94,100 @@ const searchProductos = async (req, res) => {
       pagina = 1 
     } = req.query;
     
-    // Obtener ID del cliente autenticado desde el token JWT
     const clienteId = req.user?.id;
     
-    let whereClause = 'WHERE p.stockActual > 0 AND p.precioVenta > 0';
-    let params = [clienteId]; // Agregar clienteId como primer parámetro
+    // Construir where clause dinámicamente
+    const where = {
+      AND: [
+        { stockActual: { gt: 0 } },
+        { precioVenta: { gt: 0 } }
+      ]
+    };
     
     if (q) {
-      whereClause += ' AND (p.nombre LIKE ? OR p.codigo LIKE ?)';
-      params.push(`%${q}%`, `%${q}%`);
+      where.AND.push({
+        OR: [
+          { nombre: { contains: q } },
+          { codigo: { contains: q } }
+        ]
+      });
     }
     
     if (marca) {
-      whereClause += ' AND m.nombre LIKE ?';
-      params.push(`%${marca}%`);
+      where.AND.push({
+        marcas: {
+          nombre: { contains: marca }
+        }
+      });
     }
     
     if (envase) {
-      whereClause += ' AND e.nombre LIKE ?';
-      params.push(`%${envase}%`);
+      where.AND.push({
+        envases: {
+          nombre: { contains: envase }
+        }
+      });
     }
     
-    const offset = (pagina - 1) * limite;
+    // Obtener cliente para sus porcentajes
+    const cliente = await prisma.clientes.findUnique({
+      where: { id: clienteId },
+      select: {
+        porcentaje1: true,
+        porcentaje2: true,
+        porcentaje3: true
+      }
+    });
     
-    const query = `
-      SELECT 
-        p.id, p.codigo, p.nombre, 
-        p.precioVenta as precioBase,
-        ROUND(p.precioVenta * (1 + COALESCE(c.porcentaje1, 0) / 100), 2) as precio1,
-        ROUND(p.precioVenta * (1 + COALESCE(c.porcentaje2, 0) / 100), 2) as precio2,
-        ROUND(p.precioVenta * (1 + COALESCE(c.porcentaje3, 0) / 100), 2) as precio3,
-        m.nombre as marca,
-        e.nombre as envase, e.litros,
-        te.nombre as tipo_envase,
-        CASE 
-          WHEN p.foto IS NOT NULL THEN CONCAT('data:image/jpeg;base64,', TO_BASE64(p.foto))
-          ELSE NULL 
-        END as foto,
-        o.precio_oferta,
-        o.precio_original,
-        CASE 
-          WHEN o.id IS NOT NULL THEN 1
-          ELSE 0
-        END as en_oferta,
-        c.porcentaje1,
-        c.porcentaje2,
-        c.porcentaje3
-      FROM productos p
-      LEFT JOIN marcas m ON p.marca = m.id
-      LEFT JOIN envases e ON p.envase = e.id
-      LEFT JOIN tipoEnvase te ON e.tipoenvaseid = te.id
-      LEFT JOIN ofertas o ON p.id = o.id_producto 
-        AND o.activa = 1 
-        AND o.fecha_inicio <= CURDATE() 
-        AND o.fecha_fin >= CURDATE()
-      LEFT JOIN clientes c ON c.id = ?
-      ${whereClause}
-      ORDER BY p.nombre
-    `;
+    // Obtener productos con filtros
+    const productos = await prisma.productos.findMany({
+      where,
+      include: {
+        marcas: {
+          select: { nombre: true }
+        },
+        envases: {
+          select: {
+            nombre: true,
+            litros: true,
+            tipoEnvase: {
+              select: { nombre: true }
+            }
+          }
+        }
+      },
+      orderBy: { nombre: 'asc' }
+    });
     
-    const productos = await executeQuery(query, params);
+    // Transformar datos
+    const data = productos.map(p => ({
+      id: p.id,
+      codigo: p.codigo,
+      nombre: p.nombre,
+      precioBase: p.precioVenta,
+      precio1: Math.round((p.precioVenta * (1 + (cliente?.porcentaje1 || 0) / 100)) * 100) / 100,
+      precio2: Math.round((p.precioVenta * (1 + (cliente?.porcentaje2 || 0) / 100)) * 100) / 100,
+      precio3: Math.round((p.precioVenta * (1 + (cliente?.porcentaje3 || 0) / 100)) * 100) / 100,
+      marca: p.marcas?.nombre || null,
+      envase: p.envases?.nombre || null,
+      litros: p.envases?.litros || null,
+      tipo_envase: p.envases?.tipoEnvase?.nombre || null,
+      foto: p.foto ? `data:image/jpeg;base64,${p.foto.toString('base64')}` : null,
+      precio_oferta: null,
+      precio_original: null,
+      en_oferta: 0,
+      porcentaje1: cliente?.porcentaje1 || 0,
+      porcentaje2: cliente?.porcentaje2 || 0,
+      porcentaje3: cliente?.porcentaje3 || 0
+    }));
     
     res.json({
       success: true,
-      data: productos,
+      data,
       pagination: {
         pagina: 1,
-        limite: productos.length,
-        total: productos.length
+        limite: data.length,
+        total: data.length
       }
     });
     
@@ -167,50 +200,59 @@ const searchProductos = async (req, res) => {
   }
 };
 
-// Obtener producto específico
+// Obtener producto específico - Prisma
 const getProducto = async (req, res) => {
   try {
     const { id } = req.params;
     
-    const query = `
-      SELECT 
-        p.id, p.codigo, p.nombre, p.precioVenta as precio,
-        m.nombre as marca,
-        e.nombre as envase, e.litros,
-        te.nombre as tipo_envase,
-        CASE 
-          WHEN p.foto IS NOT NULL THEN CONCAT('data:image/jpeg;base64,', TO_BASE64(p.foto))
-          ELSE NULL 
-        END as foto,
-        o.precio_oferta,
-        o.precio_original,
-        CASE 
-          WHEN o.id IS NOT NULL THEN 1
-          ELSE 0
-        END as en_oferta
-      FROM productos p
-      LEFT JOIN marcas m ON p.marca = m.id
-      LEFT JOIN envases e ON p.envase = e.id
-      LEFT JOIN tipoEnvase te ON e.tipoenvaseid = te.id
-      LEFT JOIN ofertas o ON p.id = o.id_producto 
-        AND o.activa = 1 
-        AND o.fecha_inicio <= CURDATE() 
-        AND o.fecha_fin >= CURDATE()
-      WHERE p.id = ? AND p.stockActual > 0 AND p.precioVenta > 0
-    `;
+    const producto = await prisma.productos.findFirst({
+      where: {
+        id: parseInt(id),
+        stockActual: { gt: 0 },
+        precioVenta: { gt: 0 }
+      },
+      include: {
+        marcas: {
+          select: { nombre: true }
+        },
+        envases: {
+          select: {
+            nombre: true,
+            litros: true,
+            tipoEnvase: {
+              select: { nombre: true }
+            }
+          }
+        }
+      }
+    });
     
-    const productos = await executeQuery(query, [id]);
-    
-    if (productos.length === 0) {
+    if (!producto) {
       return res.status(404).json({
         success: false,
         message: 'Producto no encontrado'
       });
     }
     
+    // Transformar datos
+    const data = {
+      id: producto.id,
+      codigo: producto.codigo,
+      nombre: producto.nombre,
+      precio: producto.precioVenta,
+      marca: producto.marcas?.nombre || null,
+      envase: producto.envases?.nombre || null,
+      litros: producto.envases?.litros || null,
+      tipo_envase: producto.envases?.tipoEnvase?.nombre || null,
+      foto: producto.foto ? `data:image/jpeg;base64,${producto.foto.toString('base64')}` : null,
+      precio_oferta: null,
+      precio_original: null,
+      en_oferta: 0
+    };
+    
     res.json({
       success: true,
-      data: productos[0]
+      data
     });
     
   } catch (error) {
@@ -222,11 +264,18 @@ const getProducto = async (req, res) => {
   }
 };
 
-// Obtener marcas disponibles
+// Obtener marcas disponibles - Prisma
 const getMarcas = async (req, res) => {
   try {
-    const query = 'SELECT id, nombre FROM marcas ORDER BY nombre';
-    const marcas = await executeQuery(query);
+    const marcas = await prisma.marcas.findMany({
+      select: {
+        id: true,
+        nombre: true
+      },
+      orderBy: {
+        nombre: 'asc'
+      }
+    });
     
     res.json({
       success: true,
@@ -242,23 +291,33 @@ const getMarcas = async (req, res) => {
   }
 };
 
-// Obtener envases disponibles
+// Obtener envases disponibles - Prisma
 const getEnvases = async (req, res) => {
   try {
-    const query = `
-      SELECT 
-        e.id, e.nombre, e.litros,
-        te.nombre as tipo_envase
-      FROM envases e
-      LEFT JOIN tipoEnvase te ON e.tipoenvaseid = te.id
-      ORDER BY e.nombre
-    `;
+    const envases = await prisma.envases.findMany({
+      include: {
+        tipoEnvase: {
+          select: {
+            nombre: true
+          }
+        }
+      },
+      orderBy: {
+        nombre: 'asc'
+      }
+    });
     
-    const envases = await executeQuery(query);
+    // Transformar datos
+    const data = envases.map(e => ({
+      id: e.id,
+      nombre: e.nombre,
+      litros: e.litros,
+      tipo_envase: e.tipoEnvase?.nombre || null
+    }));
     
     res.json({
       success: true,
-      data: envases
+      data
     });
     
   } catch (error) {
