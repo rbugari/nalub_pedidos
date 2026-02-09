@@ -33,7 +33,6 @@
         "DB_USER": "$MYSQLUSER",
         "DB_PASSWORD": "$MYSQLPASSWORD",
         "DB_NAME": "$MYSQLDATABASE",
-        "DATABASE_URL": "$DATABASE_URL",
         "JWT_SECRET": "$JWT_SECRET",
         "JWT_EXPIRES_IN": "24h",
         "FRONTEND_URL": "$FRONTEND_URL"
