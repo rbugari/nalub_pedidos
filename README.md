@@ -4,6 +4,11 @@
 
 **Sistema B2B** de gestión comercial que permite a clientes autenticados crear pre-pedidos, consultar ofertas, ver historial de pedidos y gestionar información financiera desde una interfaz web moderna instalable como app.
 
+[![Production](https://img.shields.io/badge/Status-Production-success?style=for-the-badge)](https://github.com/rbugari/nalub_pedidos)
+[![Node](https://img.shields.io/badge/Node.js-22.17.0-green?style=for-the-badge&logo=node.js)](https://nodejs.org)
+[![Vue](https://img.shields.io/badge/Vue-3.5.18-42b883?style=for-the-badge&logo=vue.js)](https://vuejs.org)
+[![Prisma](https://img.shields.io/badge/Prisma-5.22.0-2D3748?style=for-the-badge&logo=prisma)](https://www.prisma.io)
+
 ---
 
 ## 📚 Documentación Completa
@@ -28,7 +33,7 @@ Toda la documentación del proyecto está organizada en el directorio **[docs/](
 ### 1️⃣ Clonar el repositorio
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/rbugari/nalub_pedidos.git
 cd nalubPedidos
 ```
 
@@ -40,7 +45,7 @@ npm install
 cp .env.example .env
 # Editar .env con tus credenciales MySQL
 npx prisma generate
-node app.js
+npm start
 # ✅ Servidor corriendo en http://localhost:3001
 ```
 
@@ -51,6 +56,13 @@ cd frontend
 npm install
 npm run dev
 # ✅ App corriendo en http://localhost:5173
+```
+
+### 4️⃣ Credenciales de Prueba
+
+```
+Usuario: 20174737127
+Password: 754872
 ```
 
 📖 **Documentación detallada:** [docs/SETUP.md](docs/SETUP.md)
@@ -76,16 +88,70 @@ npm run dev
 
 ## ✨ Funcionalidades Principales
 
-- 🔐 **Autenticación JWT** - Login seguro con tokens de 24h
-- 📊 **Dashboard Interactivo** - Métricas, deuda, ofertas destacadas
-- 🛍️ **Catálogo de Productos** - Búsqueda, filtros, imágenes
-- 🎁 **Sistema de Ofertas** - Descuentos porcentuales y bundles
-- 🛒 **Pre-Pedidos** - Crear, editar, enviar pre-pedidos con ofertas
-- 📦 **Historial de Pedidos** - Consulta de pedidos principales y secundarios
-- 💰 **Gestión de Pagos** - Historial de últimos 5 pagos
-- 👤 **Perfil de Usuario** - Editar datos y cambiar contraseña
-- 📱 **PWA** - Instalable en móviles y tablets
-- 🔒 **Seguridad** - Helmet, rate limiting, validación Zod
+### 🔐 Autenticación & Seguridad
+- **Login JWT** - Autenticación segura con tokens de 24h
+- **Rate Limiting** - Protección contra ataques de fuerza bruta
+- **Helmet** - Headers de seguridad configurados
+- **Validación Zod** - Validación de datos en 20+ endpoints
+- **Cambio de contraseña** - Gestión segura de credenciales
+
+### 📊 Dashboard & Visualización
+- **Dashboard interactivo** - Métricas en tiempo real con animaciones
+- **Ofertas destacadas** - Tarjetas visuales con precios resaltados
+- **Gestión de deuda** - Visualización clara del estado financiero
+- **Navegación moderna** - Iconos Material Design en todas las vistas
+- **Diseño responsive** - Optimizado para desktop, tablet y móvil
+
+### 🛍️ Catálogo & Productos
+- **Búsqueda avanzada** - Filtros por marca, envase, nombre
+- **Imágenes de producto** - Visualización con modal ampliado
+- **Información detallada** - Precio, stock, características
+- **Selector inteligente** - Componente reutilizable con validación
+
+### 🎁 Sistema de Ofertas
+- **4 tipos de ofertas** - Unitaria, mínima, bundle, mix
+- **Descuentos dinámicos** - Cálculo automático de precios
+- **Visualización destacada** - Precios con fondo verde y tamaño grande
+- **Validación automática** - Reglas de negocio aplicadas
+- **Ofertas vigentes** - Filtrado por fecha de validez
+
+### 🛒 Pre-Pedidos
+- **Creación intuitiva** - Selector de productos y ofertas integrado
+- **Edición completa** - Agregar, modificar, eliminar items
+- **Cálculo automático** - Totales y descuentos en tiempo real
+- **Envío a aprobación** - Workflow completo de pre-pedido
+- **Validación de reglas** - Mínimos, máximos, incompatibilidades
+
+### 📦 Pedidos & Historial
+- **Historial completo** - Pedidos principales y secundarios
+- **Detalle expandido** - Items, precios, estado
+- **Filtros y búsqueda** - Por fecha, estado, número
+- **Exportación** - Descarga de información
+
+### 💰 Gestión Financiera
+- **Historial de pagos** - Últimos 5 pagos registrados
+- **Estado de cuenta** - Deuda actualizada
+- **Información detallada** - Fecha, monto, método de pago
+
+### 👤 Perfil de Usuario
+- **Edición de datos** - CUIT, email, teléfono, dirección
+- **Cambio de contraseña** - Con validación segura
+- **Información de cuenta** - Datos del cliente principal/secundario
+
+### 📱 Progressive Web App (PWA)
+- **Instalable** - En móviles, tablets y desktop
+- **Offline básico** - Caché de assets estáticos
+- **App-like experience** - Navegación fluida sin recarga
+- **Optimizado** - Bundle reducido 60% vs versión anterior
+
+### 🎨 UI/UX Mejorado
+- **Material Design 3** - Vuetify 3.9 con componentes modernos
+- **Iconografía completa** - Material Design Icons en toda la app
+- **Animaciones suaves** - Transiciones y efectos visuales
+- **Modo claro optimizado** - Contraste y legibilidad mejorados
+- **Cards modernas** - Bordes redondeados, sombras, hover effects
+- **Navegación intuitiva** - Drawer mobile con header de usuario
+- **Precios destacados** - Visualización clara con fondo verde y tamaño grande
 
 📖 **Documentación completa de funcionalidades:** [docs/FEATURES.md](docs/FEATURES.md)
 
@@ -166,16 +232,18 @@ Routes → Auth Middleware → Validation → Controllers → Prisma → MySQL
 ## 🚀 Deployment
 
 ### Backend - Railway
-- MySQL provisioning automático
-- Deploy desde GitHub
-- Variables de entorno
-- Auto-deploy en push
+- ✅ MySQL provisioning automático
+- ✅ Deploy desde GitHub (rama `main`)
+- ✅ Variables de entorno configuradas
+- ✅ Auto-deploy en cada push
+- 🌐 **URL:** https://nalubpedidos-production.up.railway.app
 
 ### Frontend - Vercel
-- Build optimizado con Vite
-- PWA assets generados
-- CORS configurado
-- Auto-deploy en push
+- ✅ Build optimizado con Vite
+- ✅ PWA assets generados automáticamente
+- ✅ CORS configurado para Railway backend
+- ✅ Auto-deploy en cada push a `main`
+- ✅ Preview deployments en Pull Requests
 
 📖 **Guía completa de deployment:** [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
 
