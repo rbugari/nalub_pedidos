@@ -121,9 +121,11 @@ function verDetalle(oferta) {
           <div>
             <h1 class="text-h4 font-weight-bold mb-0">Ofertas del Mes</h1>
             <p class="text-subtitle-1 text-grey-darken-1 mb-0">
-          <v-icon icon="mdi-calendar-month" class="me-2"></v-icon>
-          Promociones vigentes para {{ new Date().toLocaleDateString('es-ES', { month: 'long', year: 'numeric' }) }}
-        </p>
+              <v-icon icon="mdi-calendar-month" class="me-2"></v-icon>
+              Promociones vigentes para {{ new Date().toLocaleDateString('es-ES', { month: 'long', year: 'numeric' }) }}
+            </p>
+          </div>
+        </div>
       </v-col>
     </v-row>
 

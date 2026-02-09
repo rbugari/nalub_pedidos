@@ -80,24 +80,22 @@ export default defineConfig({
     sourcemap: false,
     terserOptions: {
       compress: {
-        drop_console: true, // Remover console.log en producción
+        drop_console: true,
         drop_debugger: true
       }
     },
     rollupOptions: {
       output: {
-        manualChunks: {
-          'vendor-vue': ['vue', 'vue-router', 'pinia'],
-          'vendor-vuetify': ['vuetify'],
-          'vendor-axios': ['axios'],
-          // Separar vistas por módulos
-          'views-auth': ['./src/views/auth/Login.vue', './src/views/auth/Perfil.vue'],
-          'views-pedidos': ['./src/views/pedidos/PedidosList.vue', './src/views/pedidos/PedidoDetail.vue'],
-          'views-prepedidos': ['./src/views/prepedidos/Prepedidos.vue', './src/views/prepedidos/PrepedidoForm.vue']
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('vuetify')) return 'vendor-vuetify';
+            if (id.includes('vue') || id.includes('pinia')) return 'vendor-vue';
+            if (id.includes('axios')) return 'vendor-axios';
+            return 'vendor';
+          }
         }
       }
     },
-    // Aumentar límite de tamaño para chunks grandes
     chunkSizeWarningLimit: 1000
   },
   server: {
