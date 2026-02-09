@@ -106,6 +106,10 @@ function closeDialog() {
   clearFilters()
 }
 
+function updateDialogValue(value) {
+  emit('update:modelValue', value)
+}
+
 function clearFilters() {
   search.value = ''
   selectedMarca.value = ''
@@ -124,7 +128,7 @@ function toggleFilters() {
 <template>
   <v-dialog 
     :model-value="modelValue" 
-    @update:model-value="emit('update:modelValue', $event)"
+    @update:model-value="updateDialogValue"
     max-width="1200px"
     persistent
   >

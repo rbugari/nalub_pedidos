@@ -310,43 +310,7 @@ function getRequisitos(oferta) {
                 <span class="text-subtitle-1">{{ tiposOfertas[oferta.tipo].label }}</span>
                 <v-spacer></v-spacer>
                 <v-chip 
-<<<<<<< HEAD
-                  v-if="item.producto_marca" 
-                  size="small" 
-                  color="primary" 
-                  variant="outlined"
-                >
-                  {{ item.producto_marca }}
-                </v-chip>
-                <span v-else class="text-grey">Sin marca</span>
-              </td>
-              <td>
-                <v-chip 
-                  v-if="item.producto_envase" 
-                  size="small" 
-                  color="blue" 
-                  variant="flat"
-                >
-                  {{ item.producto_envase }}
-                </v-chip>
-                <span v-else class="text-grey">-</span>
-              </td>
-              <td>
-                <span class="text-success font-weight-bold text-h6">
-                  ${{ formatCurrency(item.producto_precio_oferta) }}
-                </span>
-              </td>
-              <td>
-                <v-chip color="success" size="small" variant="elevated">
-                  -{{ item.descuento_calculado }}%
-                </v-chip>
-              </td>
-              <td>
-                <v-btn
-                  color="orange"
-=======
                   :color="tiposOfertas[oferta.tipo].color" 
->>>>>>> feature/oferta-precio-visibility
                   size="small"
                   variant="elevated"
                 >

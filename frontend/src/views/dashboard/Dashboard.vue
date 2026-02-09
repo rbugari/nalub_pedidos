@@ -64,30 +64,40 @@ onMounted(async () => {
   <div>
     <v-row class="mb-6">
       <v-col>
-        <h1 class="text-h4 font-weight-bold">Dashboard</h1>
-        <p class="text-subtitle-1 text-grey-darken-1" v-if="cliente">Bienvenido, {{ cliente.nombre }}</p>
+        <div class="d-flex align-center mb-2">
+          <v-icon size="40" color="primary" class="mr-3">mdi-view-dashboard</v-icon>
+          <div>
+            <h1 class="text-h4 font-weight-bold mb-0">Dashboard</h1>
+            <p class="text-subtitle-1 text-grey-darken-1 mb-0" v-if="cliente">Bienvenido, {{ cliente.nombre }}</p>
+          </div>
+        </div>
       </v-col>
     </v-row>
     
-    <v-alert v-if="error" type="error" class="mb-4">{{ error }}</v-alert>
+    <v-alert v-if="error" type="error" class="mb-4" prominent border="start">
+      <v-icon start>mdi-alert-circle</v-icon>
+      {{ error }}
+    </v-alert>
     
     <v-row v-if="loading">
       <v-col v-for="i in 3" :key="i" cols="12" md="4">
-        <v-skeleton-loader type="card" />
+        <v-skeleton-loader type="card" class="elevation-2" />
       </v-col>
     </v-row>
     
     <template v-else-if="cliente">
       <!-- Información personal de deuda -->
-      <v-row class="mb-4">
+      <v-row class="mb-6">
         <v-col cols="12" sm="6" md="3">
-          <v-card color="error" dark class="dashboard-card">
-            <v-card-text class="pa-3">
+          <v-card color="error" dark class="dashboard-card elevation-4" hover>
+            <v-card-text class="pa-4">
               <div class="d-flex align-center">
-                <v-icon size="32" class="mr-3">mdi-currency-usd</v-icon>
+                <v-avatar color="white" size="56" class="mr-4">
+                  <v-icon size="32" color="error">mdi-currency-usd</v-icon>
+                </v-avatar>
                 <div>
-                  <div class="text-h6 font-weight-bold">{{ formatCurrency(cliente.deuda) }}</div>
-                  <div class="text-caption">Mi Deuda Actual</div>
+                  <div class="text-h5 font-weight-bold mb-1">{{ formatCurrency(cliente.deuda) }}</div>
+                  <div class="text-body-2 text-uppercase" style="opacity: 0.9; letter-spacing: 1px;">Mi Deuda Actual</div>
                 </div>
               </div>
             </v-card-text>
@@ -95,14 +105,15 @@ onMounted(async () => {
         </v-col>
         
         <v-col cols="12" sm="6" md="3">
-          <v-card :color="getDeudaStatus(cliente.diasDeuda).color" dark class="dashboard-card">
-            <v-card-text class="pa-3">
+          <v-card :color="getDeudaStatus(cliente.diasDeuda).color" dark class="dashboard-card elevation-4" hover>
+            <v-card-text class="pa-4">
               <div class="d-flex align-center">
-                <v-icon size="32" class="mr-3">mdi-calendar-clock</v-icon>
+                <v-avatar color="white" size="56" class="mr-4">
+                  <v-icon size="32" :color="getDeudaStatus(cliente.diasDeuda).color">mdi-calendar-clock</v-icon>
+                </v-avatar>
                 <div>
-                  <div class="text-h6 font-weight-bold">{{ cliente.diasDeuda }}</div>
-                  <div class="text-caption">Días de Deuda</div>
-                  <div class="text-caption">{{ getDeudaStatus(cliente.diasDeuda).text }}</div>
+                  <div class="text-h5 font-weight-bold mb-1">{{ cliente.diasDeuda }} días</div>
+                  <div class="text-body-2 text-uppercase" style="opacity: 0.9; letter-spacing: 1px;">{{ getDeudaStatus(cliente.diasDeuda).text }}</div>
                 </div>
               </div>
             </v-card-text>
@@ -110,13 +121,15 @@ onMounted(async () => {
         </v-col>
         
         <v-col cols="12" sm="6" md="3">
-          <v-card color="info" dark class="dashboard-card">
-            <v-card-text class="pa-3">
+          <v-card color="info" dark class="dashboard-card elevation-4" hover>
+            <v-card-text class="pa-4">
               <div class="d-flex align-center">
-                <v-icon size="32" class="mr-3">mdi-calendar-check</v-icon>
+                <v-avatar color="white" size="56" class="mr-4">
+                  <v-icon size="32" color="info">mdi-calendar-check</v-icon>
+                </v-avatar>
                 <div>
-                  <div class="text-subtitle-2 font-weight-bold">{{ formatDate(cliente.fechaUltimoPago) }}</div>
-                  <div class="text-caption">Último Pago</div>
+                  <div class="text-body-1 font-weight-bold mb-1">{{ formatDate(cliente.fechaUltimoPago) }}</div>
+                  <div class="text-body-2 text-uppercase" style="opacity: 0.9; letter-spacing: 1px;">Último Pago</div>
                 </div>
               </div>
             </v-card-text>
@@ -131,9 +144,12 @@ onMounted(async () => {
 
       
       <!-- Ofertas Destacadas -->
-      <v-row>
+      <v-row class="mb-4">
         <v-col cols="12">
-          <h2 class="text-h5 mb-4">Ofertas Destacadas</h2>
+          <div class="d-flex align-center">
+            <v-icon size="32" color="primary" class="mr-3">mdi-tag-star</v-icon>
+            <h2 class="text-h5 font-weight-bold">Ofertas Destacadas</h2>
+          </div>
         </v-col>
       </v-row>
       
@@ -217,158 +233,219 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-/* Altura uniforme para todas las tarjetas del dashboard - más compacto */
+/* Altura para tarjetas del dashboard - diseño mejorado */
 .dashboard-card {
-  height: 90px !important;
+  min-height: 110px !important;
   display: flex;
   flex-direction: column;
-  padding: 4px !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 16px !important;
+}
+
+.dashboard-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2) !important;
 }
 
 .dashboard-card .v-card-text {
   flex: 1;
   display: flex;
   align-items: center;
-  padding: 8px 12px !important;
 }
 
-/* Tarjetas de ofertas destacadas - diseño vertical */
+.dashboard-card .v-avatar {
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* Tarjetas de ofertas destacadas - diseño mejorado */
 .compact-offer-card {
-  height: 240px;
+  height: 360px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  border-radius: 16px !important;
+  transition: all 0.3s ease;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.compact-offer-card:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18) !important;
+  border-color: rgba(var(--v-theme-primary), 0.3);
 }
 
 /* Contenedor de imagen del producto */
 .product-image-container {
-  height: 120px;
+  height: 130px;
   position: relative;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: #f5f5f5;
-  border-radius: 4px 4px 0 0;
+  background: linear-gradient(135deg, #f5f5f5 0%, #eaeaea 100%);
+  border-radius: 16px 16px 0 0;
+  padding: 12px;
 }
 
 .product-image {
-  width: 80px;
-  height: 80px;
-  border-radius: 8px;
+  width: 100px;
+  height: 100px;
+  border-radius: 12px;
   object-fit: contain;
+  transition: transform 0.3s ease;
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.1));
+}
+
+.product-image:hover {
+  transform: scale(1.08);
 }
 
 .discount-chip {
   position: absolute;
-  top: 8px;
-  right: 8px;
+  top: 12px;
+  right: 12px;
   z-index: 2;
+  font-weight: 700 !important;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
 }
 
 /* Información del producto */
 .product-info {
   flex: 1;
-  padding: 12px;
+  padding: 16px;
+  padding-bottom: 20px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+  background: white;
 }
 
 .product-title {
-  font-size: 0.9rem;
-  font-weight: 600;
-  line-height: 1.2;
-  margin-bottom: 4px;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.3;
+  margin-bottom: 6px;
   color: #1a1a1a;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .product-name {
-  font-size: 0.75rem;
+  font-size: 0.8rem;
   color: #666;
-  margin-bottom: 6px;
-  line-height: 1.1;
+  margin-bottom: 8px;
+  line-height: 1.2;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .product-date {
-  font-size: 0.7rem;
+  font-size: 0.75rem;
   color: #888;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
-/* Footer con precios y botón */
+.product-date::before {
+  content: "📅";
+  font-size: 0.9rem;
+}
+
+/* Footer con precios */
 .product-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-top: auto;
+  padding-top: 12px;
+  border-top: 2px solid rgba(76, 175, 80, 0.15);
 }
 
 .price-container {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 6px;
+  width: 100%;
 }
 
 .original-price {
-  font-size: 0.7rem;
+  font-size: 0.85rem;
   text-decoration: line-through;
   color: #999;
+  font-weight: 500;
+  opacity: 0.9;
 }
 
 .discounted-price {
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: #4caf50;
-}
-
-.add-btn {
-  height: 32px !important;
-  font-size: 0.7rem !important;
-  min-width: 70px !important;
-  padding: 0 12px !important;
-}
-
-/* Ajuste para botones en acciones rápidas */
-.dashboard-card .v-btn {
-  height: 32px !important;
-  font-size: 0.7rem !important;
-  padding: 0 8px !important;
-}
-
-/* Iconos más pequeños */
-.dashboard-card .v-icon {
-  font-size: 22px !important;
-  margin-right: 8px !important;
-}
-
-/* Texto más compacto */
-.dashboard-card .text-h6 {
-  font-size: 0.95rem !important;
-  line-height: 1.1;
-  font-weight: 600 !important;
-}
-
-.dashboard-card .text-caption {
-  font-size: 0.65rem !important;
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: #2e7d32;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
   line-height: 1;
-  margin-top: 2px;
+  background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 2px solid #4caf50;
+  box-shadow: 0 2px 8px rgba(76, 175, 80, 0.2);
 }
 
-.dashboard-card .text-subtitle-2 {
-  font-size: 0.8rem !important;
-  line-height: 1.1;
-  font-weight: 600 !important;
+.discounted-price::before {
+  content: "💰";
+  font-size: 1.3rem;
 }
 
-
-
-/* Efecto hover para imágenes clickeables */
-.product-image {
-  transition: transform 0.2s ease;
+/* Responsivo para móviles */
+@media (max-width: 768px) {
+  .dashboard-card {
+    min-height: 100px !important;
+  }
+  
+  .compact-offer-card {
+    height: 380px;
+  }
+  
+  .product-image-container {
+    height: 140px;
+  }
+  
+  .product-image {
+    width: 120px;
+    height: 120px;
+  }
+  
+  .discounted-price {
+    font-size: 1.6rem;
+    padding: 6px 10px;
+  }
 }
 
-.product-image:hover {
-  transform: scale(1.05);
+/* Efecto de carga suave */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
+
+.v-row > .v-col {
+  animation: fadeIn 0.4s ease-out;
+}
+
+.v-row > .v-col:nth-child(1) { animation-delay: 0.05s; }
+.v-row > .v-col:nth-child(2) { animation-delay: 0.1s; }
+.v-row > .v-col:nth-child(3) { animation-delay: 0.15s; }
+.v-row > .v-col:nth-child(4) { animation-delay: 0.2s; }
 </style>

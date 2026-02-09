@@ -84,10 +84,15 @@ function openImageModal(producto) {
 
 <template>
   <div>
-    <v-row class="mb-4">
+    <v-row class="mb-6">
       <v-col>
-        <h1 class="text-h4 font-weight-bold">Productos</h1>
-        <p class="text-subtitle-1 text-grey-600">Consulta de productos disponibles</p>
+        <div class="d-flex align-center mb-2">
+          <v-icon size="40" color="primary" class="mr-3">mdi-package-variant</v-icon>
+          <div>
+            <h1 class="text-h4 font-weight-bold mb-0">Catálogo de Productos</h1>
+            <p class="text-subtitle-1 text-grey-darken-1 mb-0">Consulta de productos disponibles</p>
+          </div>
+        </div>
       </v-col>
     </v-row>
 

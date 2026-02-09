@@ -230,8 +230,13 @@ function closePasswordDialog() {
   <div>
     <v-row class="mb-6">
       <v-col>
-        <h1 class="text-h4 font-weight-bold">Mi Perfil</h1>
-        <p class="text-subtitle-1 text-grey-darken-1">Gestiona tu información personal</p>
+        <div class="d-flex align-center mb-2">
+          <v-icon size="40" color="primary" class="mr-3">mdi-account-cog</v-icon>
+          <div>
+            <h1 class="text-h4 font-weight-bold mb-0">Mi Perfil</h1>
+            <p class="text-subtitle-1 text-grey-darken-1 mb-0">Gestiona tu información personal</p>
+          </div>
+        </div>
       </v-col>
     </v-row>
 

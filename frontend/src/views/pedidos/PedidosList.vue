@@ -80,8 +80,13 @@ function formatDate(dateString) {
   <div>
     <v-row class="mb-6">
       <v-col>
-        <h1 class="text-h4 font-weight-bold">Pedidos</h1>
-        <p class="text-subtitle-1 text-grey-darken-1">Pedidos de los últimos 365 días</p>
+        <div class="d-flex align-center mb-2">
+          <v-icon size="40" color="primary" class="mr-3">mdi-clipboard-check-outline</v-icon>
+          <div>
+            <h1 class="text-h4 font-weight-bold mb-0">Historial de Pedidos</h1>
+            <p class="text-subtitle-1 text-grey-darken-1 mb-0">Pedidos de los últimos 365 días</p>
+          </div>
+        </div>
       </v-col>
     </v-row>
 

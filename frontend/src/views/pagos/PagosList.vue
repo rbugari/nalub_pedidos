@@ -60,10 +60,15 @@ onMounted(() => {
 <template>
   <div>
     <!-- Header -->
-    <v-row class="mb-4">
+    <v-row class="mb-6">
       <v-col>
-        <h1 class="text-h4 font-weight-bold text-primary">Pagos</h1>
-        <p class="text-subtitle-1 text-grey-600">Historial de los últimos pagos realizados</p>
+        <div class="d-flex align-center mb-2">
+          <v-icon size="40" color="primary" class="mr-3">mdi-cash-multiple</v-icon>
+          <div>
+            <h1 class="text-h4 font-weight-bold mb-0">Historial de Pagos</h1>
+            <p class="text-subtitle-1 text-grey-darken-1 mb-0">Historial de los últimos pagos realizados</p>
+          </div>
+        </div>
       </v-col>
     </v-row>
 

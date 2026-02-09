@@ -132,10 +132,15 @@ function getStatusColor(estado) {
 
 <template>
   <div>
-    <v-row class="mb-6">
+    <v-row class="mb-6 align-center">
       <v-col>
-        <h1 class="text-h4 font-weight-bold">Prepedidos</h1>
-        <p class="text-subtitle-1 text-grey-darken-1">Gestión de prepedidos pendientes</p>
+        <div class="d-flex align-center mb-2">
+          <v-icon size="40" color="primary" class="mr-3">mdi-cart-outline</v-icon>
+          <div>
+            <h1 class="text-h4 font-weight-bold mb-0">Prepedidos</h1>
+            <p class="text-subtitle-1 text-grey-darken-1 mb-0">Gestión de prepedidos pendientes</p>
+          </div>
+        </div>
       </v-col>
       <v-col cols="auto">
         <v-tooltip :text="hasPrepedidoBorrador ? 'Ya existe un prepedido en borrador. Solo puede haber uno abierto.' : 'Crear nuevo prepedido'">
@@ -143,9 +148,12 @@ function getStatusColor(estado) {
             <v-btn 
               v-bind="props"
               color="primary" 
+              size="large"
               prepend-icon="mdi-plus"
               :disabled="hasPrepedidoBorrador"
               @click="router.push('/prepedidos/nuevo')"
+              elevation="2"
+              class="font-weight-bold"
             >
               Nuevo Prepedido
             </v-btn>
