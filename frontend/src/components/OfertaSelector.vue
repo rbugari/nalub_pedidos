@@ -117,7 +117,7 @@ function configurarOferta(oferta) {
         envase: prod.envase,
         cantidad: oferta.tipo === 'bundle' ? (prod.unidades_fijas || 1) : 1,
         minimo: oferta.tipo === 'bundle' ? (prod.unidades_fijas || 1) : 0,
-        precioBase: parseFloat(prod.precioVenta || 0)
+        precioBase: parseFloat(prod.precioOferta || prod.precioVenta || 0) // ✅ USA PRECIO DE OFERTA
       })
     })
   } else {
@@ -130,7 +130,7 @@ function configurarOferta(oferta) {
       envase: producto.envase,
       cantidad: oferta.tipo === 'minima' ? (oferta.min_unidades_total || 1) : 1,
       minimo: oferta.tipo === 'minima' ? (oferta.min_unidades_total || 1) : 1,
-      precioBase: parseFloat(producto.precioVenta || 0)
+      precioBase: parseFloat(producto.precioOferta || producto.precioVenta || 0) // ✅ USA PRECIO DE OFERTA
     }]
   }
   
@@ -310,11 +310,13 @@ function getRequisitos(oferta) {
                 <span class="text-subtitle-1">{{ tiposOfertas[oferta.tipo].label }}</span>
                 <v-spacer></v-spacer>
                 <v-chip 
-                  :color="tiposOfertas[oferta.tipo].color" 
-                  size="small"
+                  color="error"
+                  size="large"
                   variant="elevated"
+                  prepend-icon="mdi-sale"
+                  v-if="oferta.descuento_calculado > 0"
                 >
-                  {{ getDescuentoTexto(oferta) }}
+                  <span class="text-h6 font-weight-bold">-{{ Math.round(oferta.descuento_calculado) }}%</span>
                 </v-chip>
               </v-card-title>
 
@@ -322,6 +324,31 @@ function getRequisitos(oferta) {
               <v-card-text class="pa-3">
                 <h3 class="text-h6 mb-2">{{ oferta.titulo }}</h3>
                 <p class="text-body-2 text-grey-darken-1 mb-3">{{ oferta.descripcion }}</p>
+
+                <!-- Precios destacados -->
+                <v-card variant="outlined" class="mb-3 pa-3" color="success">
+                  <div class="d-flex align-center justify-space-between">
+                    <div>
+                      <div class="text-caption text-grey-darken-1">Precio normal</div>
+                      <div class="text-decoration-line-through text-grey">
+                        {{ formatCurrency(oferta.precio_original) }}
+                      </div>
+                    </div>
+                    <v-icon color="success" size="large">mdi-arrow-right-thick</v-icon>
+                    <div class="text-right">
+                      <div class="text-caption text-success-darken-1 font-weight-bold">Precio oferta</div>
+                      <div class="text-h5 font-weight-bold text-success">
+                        {{ formatCurrency(oferta.precio_referencia) }}
+                      </div>
+                    </div>
+                  </div>
+                  <v-divider class="my-2"></v-divider>
+                  <div class="text-center">
+                    <v-chip color="error" size="small" variant="flat" prepend-icon="mdi-percent">
+                      <strong>{{ Math.round(oferta.descuento_calculado) }}% de descuento</strong>
+                    </v-chip>
+                  </div>
+                </v-card>
 
                 <!-- Requisitos -->
                 <v-alert 

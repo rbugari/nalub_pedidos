@@ -60,7 +60,7 @@ const createPrepedido = async (req, res) => {
         
         // Si hay ofertaid, calcular precio con oferta
         if (item.ofertaid) {
-          console.log('🎁 Aplicando oferta ID:', item.ofertaid);
+          console.log('🎁 Validando oferta ID:', item.ofertaid);
           
           const oferta = await tx.ofertas.findFirst({
             where: {
@@ -74,30 +74,48 @@ const createPrepedido = async (req, res) => {
               valor_precio: true,
               min_unidades_total: true,
               unidad_base: true,
-              activa: true
+              activa: true,
+              fecha_inicio: true,
+              fecha_fin: true,
+              titulo: true
             }
           });
           
           if (oferta) {
-            // Verificar que el producto esté en la oferta
-            const detalle = await tx.ofertas_detalle.findFirst({
-              where: {
-                oferta_id: item.ofertaid,
-                producto_id: item.productoId
-              }
-            });
+            // ✅ VALIDAR VIGENCIA DE LA OFERTA
+            const hoy = new Date();
+            const vigente = oferta.activa && 
+                           oferta.fecha_inicio <= hoy && 
+                           oferta.fecha_fin >= hoy;
             
-            if (detalle) {
-              const precioInfo = calcularPrecioConOferta(
-                oferta,
-                producto.precioVenta,
-                item.cantidad || 1
-              );
+            if (!vigente) {
+              console.log(`⚠️  Oferta ${item.ofertaid} ("${oferta.titulo}") ya no está vigente - usando precio normal`);
+              // No aplicar precio de oferta, usar precio normal
+              precioFinal = item.precioEstimado || producto.precioVenta;
+            } else {
+              // Oferta vigente, aplicar precio
+              // Verificar que el producto esté en la oferta
+              const detalle = await tx.ofertas_detalle.findFirst({
+                where: {
+                  oferta_id: item.ofertaid,
+                  producto_id: item.productoId
+                }
+              });
               
-              precioFinal = precioInfo.precioUnitario;
-              console.log('💰 Precio original:', producto.precioVenta);
-              console.log('💰 Precio con oferta:', precioFinal);
+              if (detalle) {
+                const precioInfo = calcularPrecioConOferta(
+                  oferta,
+                  producto.precioVenta,
+                  item.cantidad || 1
+                );
+                
+                precioFinal = precioInfo.precioUnitario;
+                console.log('💰 Precio original:', producto.precioVenta);
+                console.log('💰 Precio con oferta vigente:', precioFinal);
+              }
             }
+          } else {
+            console.log(`⚠️  Oferta ${item.ofertaid} no encontrada o inactiva - usando precio normal`);
           }
         }
         
@@ -348,7 +366,7 @@ const updatePrepedido = async (req, res) => {
         
         // Si hay ofertaid, calcular precio con oferta
         if (item.ofertaid) {
-          console.log('🎁 Aplicando oferta ID:', item.ofertaid);
+          console.log('🎁 Validando oferta ID:', item.ofertaid);
           
           const oferta = await tx.ofertas.findFirst({
             where: {
@@ -362,28 +380,46 @@ const updatePrepedido = async (req, res) => {
               valor_precio: true,
               min_unidades_total: true,
               unidad_base: true,
-              activa: true
+              activa: true,
+              fecha_inicio: true,
+              fecha_fin: true,
+              titulo: true
             }
           });
           
           if (oferta) {
-            const detalle = await tx.ofertas_detalle.findFirst({
-              where: {
-                oferta_id: item.ofertaid,
-                producto_id: item.productoId
-              }
-            });
+            // ✅ VALIDAR VIGENCIA DE LA OFERTA
+            const hoy = new Date();
+            const vigente = oferta.activa && 
+                           oferta.fecha_inicio <= hoy && 
+                           oferta.fecha_fin >= hoy;
             
-            if (detalle) {
-              const precioInfo = calcularPrecioConOferta(
-                oferta,
-                producto.precioVenta,
-                item.cantidad || 1
-              );
+            if (!vigente) {
+              console.log(`⚠️  Oferta ${item.ofertaid} ("${oferta.titulo}") ya no está vigente - usando precio normal`);
+              // No aplicar precio de oferta, usar precio normal
+              precioFinal = item.precioEstimado || producto.precioVenta;
+            } else {
+              // Oferta vigente, aplicar precio
+              const detalle = await tx.ofertas_detalle.findFirst({
+                where: {
+                  oferta_id: item.ofertaid,
+                  producto_id: item.productoId
+                }
+              });
               
-              precioFinal = precioInfo.precioUnitario;
-              console.log('💰 Precio con oferta:', precioFinal);
+              if (detalle) {
+                const precioInfo = calcularPrecioConOferta(
+                  oferta,
+                  producto.precioVenta,
+                  item.cantidad || 1
+                );
+                
+                precioFinal = precioInfo.precioUnitario;
+                console.log('💰 Precio con oferta vigente:', precioFinal);
+              }
             }
+          } else {
+            console.log(`⚠️  Oferta ${item.ofertaid} no encontrada o inactiva - usando precio normal`);
           }
         }
         
@@ -428,13 +464,29 @@ const enviarPrepedido = async (req, res) => {
     const { id } = req.params;
     const clienteId = req.user.id;
     
+    console.log('🚀 === VALIDANDO ENVÍO DE PREPEDIDO ===');
+    console.log('📋 Prepedido ID:', id);
+    console.log('👤 Cliente ID:', clienteId);
+    
     // Verificar que el pre-pedido existe y está en estado borrador
     const prepedido = await prisma.prepedidos_cabecera.findFirst({
       where: {
         id: parseInt(id),
         cliente_id: clienteId
       },
-      select: { estado: true }
+      include: {
+        prepedidos_items: {
+          where: {
+            ofertaid: { not: null }
+          },
+          select: {
+            id: true,
+            ofertaid: true,
+            descripcion: true,
+            producto_id: true
+          }
+        }
+      }
     });
     
     if (!prepedido) {
@@ -451,11 +503,112 @@ const enviarPrepedido = async (req, res) => {
       });
     }
     
+    // ✅ VALIDAR OFERTAS VIGENTES
+    if (prepedido.prepedidos_items.length > 0) {
+      console.log(`🎁 Validando ${prepedido.prepedidos_items.length} items con ofertas`);
+      
+      const hoy = new Date();
+      const ofertasIds = [...new Set(prepedido.prepedidos_items.map(item => item.ofertaid))];
+      
+      console.log('🔍 IDs de ofertas a validar:', ofertasIds);
+      
+      // Obtener todas las ofertas referenciadas
+      const ofertas = await prisma.ofertas.findMany({
+        where: {
+          id: { in: ofertasIds }
+        },
+        select: {
+          id: true,
+          titulo: true,
+          activa: true,
+          fecha_inicio: true,
+          fecha_fin: true
+        }
+      });
+      
+      // Verificar vigencia de cada oferta
+      const ofertasExpiradas = [];
+      const ofertasInactivas = [];
+      
+      for (const oferta of ofertas) {
+        const vigente = oferta.activa && 
+                       oferta.fecha_inicio <= hoy && 
+                       oferta.fecha_fin >= hoy;
+        
+        if (!vigente) {
+          const itemsAfectados = prepedido.prepedidos_items.filter(
+            item => item.ofertaid === oferta.id
+          );
+          
+          if (!oferta.activa) {
+            ofertasInactivas.push({
+              id: oferta.id,
+              titulo: oferta.titulo,
+              items: itemsAfectados.map(i => i.descripcion)
+            });
+          } else if (oferta.fecha_fin < hoy) {
+            ofertasExpiradas.push({
+              id: oferta.id,
+              titulo: oferta.titulo,
+              fecha_fin: oferta.fecha_fin,
+              items: itemsAfectados.map(i => i.descripcion)
+            });
+          }
+        }
+      }
+      
+      // Si hay ofertas expiradas o inactivas, rechazar el envío
+      if (ofertasExpiradas.length > 0 || ofertasInactivas.length > 0) {
+        console.log('❌ OFERTAS NO VIGENTES DETECTADAS');
+        console.log('Expiradas:', ofertasExpiradas);
+        console.log('Inactivas:', ofertasInactivas);
+        
+        let mensajeError = 'No se puede enviar el prepedido porque contiene ofertas que ya no están vigentes:\n\n';
+        
+        if (ofertasExpiradas.length > 0) {
+          mensajeError += '🗓️ Ofertas expiradas:\n';
+          ofertasExpiradas.forEach(oferta => {
+            const fechaFin = new Date(oferta.fecha_fin).toLocaleDateString('es-AR');
+            mensajeError += `  • "${oferta.titulo}" (venció el ${fechaFin})\n`;
+            mensajeError += `    Productos afectados: ${oferta.items.join(', ')}\n`;
+          });
+        }
+        
+        if (ofertasInactivas.length > 0) {
+          mensajeError += '\n❌ Ofertas inactivas:\n';
+          ofertasInactivas.forEach(oferta => {
+            mensajeError += `  • "${oferta.titulo}"\n`;
+            mensajeError += `    Productos afectados: ${oferta.items.join(', ')}\n`;
+          });
+        }
+        
+        mensajeError += '\n👉 Por favor, edita tu prepedido y elimina o reemplaza estos productos.';
+        
+        return res.status(400).json({
+          success: false,
+          message: mensajeError,
+          ofertas_expiradas: ofertasExpiradas.map(o => ({ 
+            id: o.id, 
+            titulo: o.titulo,
+            fecha_fin: o.fecha_fin
+          })),
+          ofertas_inactivas: ofertasInactivas.map(o => ({ 
+            id: o.id, 
+            titulo: o.titulo 
+          }))
+        });
+      }
+      
+      console.log('✅ Todas las ofertas están vigentes');
+    }
+    
     // Actualizar estado
     await prisma.prepedidos_cabecera.update({
       where: { id: parseInt(id) },
       data: { estado: 'enviado' }
     });
+    
+    console.log('🎉 Prepedido enviado exitosamente');
     
     res.json({
       success: true,
@@ -463,10 +616,10 @@ const enviarPrepedido = async (req, res) => {
     });
     
   } catch (error) {
-    console.error('Error enviando pre-pedido:', error);
+    console.error('❌ Error enviando pre-pedido:', error);
     res.status(500).json({
       success: false,
-      message: 'Error interno del servidor'
+      message: error.message || 'Error interno del servidor'
     });
   }
 };

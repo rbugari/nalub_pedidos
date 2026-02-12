@@ -2,15 +2,29 @@ const prisma = require('../lib/prisma');
 
 /**
  * Función auxiliar: Calcular precio con oferta
- * @param {Object} oferta - Oferta con tipo, modo_precio, valor_precio
+ * @param {Object} oferta - Oferta con tipo, modo_precio, valor_precio, min_unidades_total
  * @param {Number} precioOriginal - Precio de venta del producto
  * @param {Number} cantidad - Cantidad de unidades
- * @returns {Object} { precioUnitario, precioTotal, descuentoPct }
+ * @returns {Object} { precioUnitario, precioTotal, descuentoPct, ofertaAplicada }
  */
 const calcularPrecioConOferta = (oferta, precioOriginal, cantidad = 1) => {
   let precioUnitario = precioOriginal;
   let precioTotal = precioOriginal * cantidad;
   let descuentoPct = 0;
+  let ofertaAplicada = false;
+
+  // ✅ VALIDAR CANTIDAD MÍNIMA para ofertas tipo "minima" o "mix"
+  if ((oferta.tipo === 'minima' || oferta.tipo === 'mix') && oferta.min_unidades_total) {
+    if (cantidad < oferta.min_unidades_total) {
+      // No se cumple el mínimo, usar precio normal
+      return {
+        precioUnitario: Math.round(precioOriginal * 100) / 100,
+        precioTotal: Math.round((precioOriginal * cantidad) * 100) / 100,
+        descuentoPct: 0,
+        ofertaAplicada: false
+      };
+    }
+  }
 
   // Según el modo de precio
   switch (oferta.modo_precio) {
@@ -21,6 +35,7 @@ const calcularPrecioConOferta = (oferta, precioOriginal, cantidad = 1) => {
       descuentoPct = precioOriginal > 0 
         ? ((precioOriginal - precioUnitario) / precioOriginal) * 100 
         : 0;
+      ofertaAplicada = true;
       break;
 
     case 'precio_pack':
@@ -41,6 +56,7 @@ const calcularPrecioConOferta = (oferta, precioOriginal, cantidad = 1) => {
           ? (((precioOriginal * cantidad) - precioTotal) / (precioOriginal * cantidad)) * 100
           : 0;
       }
+      ofertaAplicada = true;
       break;
 
     case 'descuento_pct':
@@ -48,6 +64,7 @@ const calcularPrecioConOferta = (oferta, precioOriginal, cantidad = 1) => {
       descuentoPct = oferta.valor_precio || 0;
       precioUnitario = precioOriginal * (1 - descuentoPct / 100);
       precioTotal = precioUnitario * cantidad;
+      ofertaAplicada = true;
       break;
 
     default:
@@ -58,7 +75,8 @@ const calcularPrecioConOferta = (oferta, precioOriginal, cantidad = 1) => {
   return {
     precioUnitario: Math.round(precioUnitario * 100) / 100,
     precioTotal: Math.round(precioTotal * 100) / 100,
-    descuentoPct: Math.round(descuentoPct * 100) / 100
+    descuentoPct: Math.round(descuentoPct * 100) / 100,
+    ofertaAplicada
   };
 };
 
@@ -192,39 +210,52 @@ const getOfertasVigentesMes = async (req, res) => {
         0
       );
       
-      // Formatear productos con fotos
-      const productos = detallesConStock.map(detalle => ({
-        detalle_id: detalle.id,
-        producto_id: detalle.producto_id,
-        unidades_fijas: detalle.unidades_fijas,
-        codigo: detalle.productos.codigo,
-        nombre: detalle.productos.nombre,
-        precioVenta: parseFloat(detalle.productos.precioVenta.toString()),
-        stockActual: detalle.productos.stockActual,
-        marca: detalle.productos.marcas?.nombre || null,
-        envase: detalle.productos.envases?.nombre || null,
-        litros: detalle.productos.envases?.litros || null,
-        foto: detalle.productos.foto 
-          ? `data:image/jpeg;base64,${detalle.productos.foto.toString('base64')}` 
-          : null
-      }));
+      // Preparar datos de la oferta para cálculos
+      const ofertaData = {
+        tipo: oferta.tipo,
+        modo_precio: oferta.modo_precio,
+        valor_precio: parseFloat(oferta.valor_precio?.toString() || '0'),
+        min_unidades_total: oferta.min_unidades_total,
+        unidades_totales
+      };
       
-      // Calcular precios con oferta para primer producto (referencia)
-      let precioInfo = { precioUnitario: 0, precioTotal: 0, descuentoPct: 0 };
-      if (productos.length > 0) {
-        const ofertaData = {
-          tipo: oferta.tipo,
-          modo_precio: oferta.modo_precio,
-          valor_precio: parseFloat(oferta.valor_precio?.toString() || '0'),
-          min_unidades_total: oferta.min_unidades_total,
-          unidades_totales
-        };
-        precioInfo = calcularPrecioConOferta(
+      // Formatear productos con fotos Y precio de oferta calculado
+      const productos = detallesConStock.map(detalle => {
+        const precioVenta = parseFloat(detalle.productos.precioVenta.toString());
+        
+        // Calcular precio con oferta para CADA producto
+        const precioInfo = calcularPrecioConOferta(
           ofertaData,
-          productos[0].precioVenta,
-          oferta.min_unidades_total || 1
+          precioVenta,
+          detalle.unidades_fijas || oferta.min_unidades_total || 1
         );
-      }
+        
+        return {
+          detalle_id: detalle.id,
+          producto_id: detalle.producto_id,
+          unidades_fijas: detalle.unidades_fijas,
+          codigo: detalle.productos.codigo,
+          nombre: detalle.productos.nombre,
+          precioVenta: precioVenta,
+          precioOferta: precioInfo.precioUnitario, // ✅ PRECIO DE LA OFERTA
+          descuentoPct: precioInfo.descuentoPct,
+          stockActual: detalle.productos.stockActual,
+          marca: detalle.productos.marcas?.nombre || null,
+          envase: detalle.productos.envases?.nombre || null,
+          litros: detalle.productos.envases?.litros || null,
+          foto: detalle.productos.foto 
+            ? `data:image/jpeg;base64,${detalle.productos.foto.toString('base64')}` 
+            : null
+        };
+      });
+      
+      // El precio de referencia ahora viene del primer producto ya calculado
+      const precioInfo = productos.length > 0 
+        ? {
+            precioUnitario: productos[0].precioOferta,
+            descuentoPct: productos[0].descuentoPct
+          }
+        : { precioUnitario: 0, descuentoPct: 0 };
       
       return {
         id: oferta.id,

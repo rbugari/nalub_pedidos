@@ -13,6 +13,10 @@ const selectedPrepedido = ref(null)
 const loadingDetails = ref(false)
 const confirmDialog = ref(false)
 const prepedidoToSend = ref(null)
+const errorDialog = ref(false)
+const errorMessage = ref('')
+const ofertasExpiradas = ref([])
+const successMessage = ref('')
 
 // Computed property para verificar si existe un prepedido en borrador
 const hasPrepedidoBorrador = computed(() => {
@@ -107,10 +111,28 @@ async function confirmarEnvioPrepedido() {
     await loadPrepedidos()
     confirmDialog.value = false
     prepedidoToSend.value = null
-    // Mostrar mensaje de éxito
+    successMessage.value = 'Prepedido enviado exitosamente'
+    
+    // Limpiar mensaje después de 3 segundos
+    setTimeout(() => {
+      successMessage.value = ''
+    }, 3000)
   } catch (err) {
     console.error('Error al enviar prepedido:', err)
-    // Mostrar mensaje de error
+    confirmDialog.value = false
+    
+    // Verificar si es error de ofertas expiradas
+    if (err.response?.status === 400 && err.response?.data?.ofertas_expiradas) {
+      ofertasExpiradas.value = [
+        ...(err.response.data.ofertas_expiradas || []),
+        ...(err.response.data.ofertas_inactivas || [])
+      ]
+      errorMessage.value = err.response.data.message || 'El prepedido contiene ofertas que ya no están vigentes'
+    } else {
+      errorMessage.value = err.response?.data?.message || 'Error al enviar el prepedido. Por favor intente nuevamente.'
+    }
+    
+    errorDialog.value = true
   }
 }
 
@@ -162,7 +184,14 @@ function getStatusColor(estado) {
       </v-col>
     </v-row>
 
-    <v-alert v-if="error" type="error" class="mb-4">{{ error }}</v-alert>
+    <!-- Alertas de éxito y error -->
+    <v-alert v-if="successMessage" type="success" variant="tonal" closable class="mb-4" @click:close="successMessage = ''">
+      {{ successMessage }}
+    </v-alert>
+
+    <v-alert v-if="error" type="error" variant="tonal" closable class="mb-4" @click:close="error = null">
+      {{ error }}
+    </v-alert>
 
     <v-card>
       <v-data-table
@@ -358,6 +387,62 @@ function getStatusColor(estado) {
             @click="confirmarEnvioPrepedido"
           >
             Confirmar Envío
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+    
+    <!-- Dialog de error de ofertas expiradas -->
+    <v-dialog v-model="errorDialog" max-width="600px" persistent>
+      <v-card>
+        <v-card-title class="text-h5 bg-error text-white">
+          <v-icon color="white" class="mr-2">mdi-alert-circle</v-icon>
+          No se puede enviar el prepedido
+        </v-card-title>
+        <v-card-text class="pt-4">
+          <v-alert type="error" variant="tonal" class="mb-4">
+            <div class="text-pre-wrap">{{ errorMessage }}</div>
+          </v-alert>
+          
+          <div v-if="ofertasExpiradas.length > 0" class="mt-4">
+            <p class="text-subtitle-1 font-weight-bold mb-2">Ofertas que ya no están vigentes:</p>
+            <v-list density="compact" class="bg-grey-lighten-4 rounded">
+              <v-list-item
+                v-for="oferta in ofertasExpiradas"
+                :key="oferta.id"
+                class="border-bottom"
+              >
+                <template v-slot:prepend>
+                  <v-icon color="error">mdi-tag-off</v-icon>
+                </template>
+                <v-list-item-title>{{ oferta.titulo }}</v-list-item-title>
+                <v-list-item-subtitle v-if="oferta.fecha_fin">
+                  Venció el: {{ new Date(oferta.fecha_fin).toLocaleDateString('es-AR') }}
+                </v-list-item-subtitle>
+              </v-list-item>
+            </v-list>
+          </div>
+          
+          <v-alert type="info" variant="tonal" class="mt-4">
+            <strong>¿Qué hacer?</strong><br>
+            Edita tu prepedido y elimina los productos con ofertas expiradas, o reemplázalos por productos con ofertas vigentes.
+          </v-alert>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer></v-spacer>
+          <v-btn
+            color="grey"
+            variant="text"
+            @click="errorDialog = false; ofertasExpiradas = []"
+          >
+            Cerrar
+          </v-btn>
+          <v-btn
+            color="primary"
+            variant="elevated"
+            @click="errorDialog = false; ofertasExpiradas = []; editPrepedido({ id: prepedidoToSend })"
+          >
+            Editar Prepedido
           </v-btn>
         </v-card-actions>
       </v-card>
